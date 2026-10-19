@@ -29,6 +29,16 @@ note_embeddings  note_id pk -> notes on delete cascade, model, content_hash,
 - **Effective role** = owner if `owner_id` matches, otherwise the highest role across the caller's direct
   grant and the grants of every team they belong to. One SQL function/CTE computes it (`notes/access.ts`).
 
+## Auth
+- Email + password. Passwords are hashed with bcrypt (cost 12, configurable). They're limited to 72
+  *bytes*, because bcrypt silently ignores anything past that.
+- Login returns an HS256 JWT (`sub` = user id) that lasts 1 hour. Verification pins the algorithm,
+  so `alg: none` and algorithm-swap tokens get rejected.
+- Unknown email and wrong password return the same 401 and take the same time (a dummy hash
+  gets compared), so the endpoint can't be used to find out which emails have accounts.
+- Emails are `citext`: unique and matched without regard to case.
+- Not built (README "more time" list): refresh tokens and revocation, login rate limiting, email verification.
+
 ## Permissions
 | Action                      | Owner | Editor | Viewer |
 |-----------------------------|:-----:|:------:|:------:|
