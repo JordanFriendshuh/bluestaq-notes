@@ -21,6 +21,8 @@ services:
     environment:
       DATABASE_URL: postgres://notes:notes@db:5432/notes
       PORT: 3000
+      # Local demo only; any real deployment sets its own secret.
+      JWT_SECRET: ${JWT_SECRET:-local-demo-secret-change-me-0123456789}
     ports:
       - '${API_PORT:-3000}:3000'
     depends_on:
