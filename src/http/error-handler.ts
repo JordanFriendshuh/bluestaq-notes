@@ -9,7 +9,8 @@ export const unknownRoute: RequestHandler = () => {
 /** Turns any thrown error into the standard error body; unexpected errors become a bare 500. */
 export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (err instanceof HttpError) {
-    res.status(err.status).json({ error: { code: err.code, message: err.message } });
+    const { status, code, message, details } = err;
+    res.status(status).json({ error: { code, message, ...(details && { details }) } });
     return;
   }
   // express.json() reports malformed bodies as errors with a status and type instead of throwing HttpError.

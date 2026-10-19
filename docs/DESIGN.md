@@ -92,7 +92,8 @@ DELETE /notes/:id/shares/:shareId
 GET    /health
 WS     /ws                      presence, see below
 ```
-Errors: `{ "error": { "code", "message" } }`. 400 validation, 401 no/invalid token, 403 role too low,
+Errors: `{ "error": { "code", "message", "details"? } }`. `details` is only on validation errors:
+one `{ path, message }` per invalid field (for example `path: "items.0.text"`). 400 validation, 401 no/invalid token, 403 role too low,
 404 not found or not visible, 409 version conflict, 428 missing If-Match.
 
 ## Concurrency
