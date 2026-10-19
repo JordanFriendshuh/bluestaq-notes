@@ -19,13 +19,15 @@ const auth = {
   jwtSecret: config.JWT_SECRET,
   tokenTtlSeconds: config.TOKEN_TTL_SECONDS,
   bcryptRounds: config.BCRYPT_ROUNDS,
+  rateLimit: { windowSeconds: config.AUTH_RATE_WINDOW_SECONDS, limit: config.AUTH_RATE_LIMIT },
 };
 const tls =
   config.TLS_CERT_FILE && config.TLS_KEY_FILE
     ? { certFile: config.TLS_CERT_FILE, keyFile: config.TLS_KEY_FILE }
     : undefined;
 
-const server = createServer(createApp({ db, auth }), tls).listen(config.PORT, () => {
+const app = createApp({ db, auth, behindProxy: config.TLS_TERMINATED_UPSTREAM });
+const server = createServer(app, tls).listen(config.PORT, () => {
   logger.info({ port: config.PORT, https: Boolean(tls) }, 'listening');
 });
 

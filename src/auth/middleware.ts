@@ -8,14 +8,17 @@ declare module 'express-serve-static-core' {
   }
 }
 
+// The auth scheme name is case-insensitive per RFC 9110.
+const BEARER = /^bearer +(\S+)$/i;
+
 const unauthenticated = () =>
   new HttpError(401, 'unauthenticated', 'A valid bearer token is required');
 
 /** Rejects requests without a valid bearer token and records the caller's user id on the request. */
 export function requireAuth(settings: TokenSettings): RequestHandler {
   return (req, _res, next) => {
-    const [scheme, token] = req.headers.authorization?.split(' ') ?? [];
-    const userId = scheme === 'Bearer' && token ? verifyToken(token, settings) : null;
+    const token = BEARER.exec(req.headers.authorization ?? '')?.[1];
+    const userId = token ? verifyToken(token, settings) : null;
     if (!userId) throw unauthenticated();
     req.userId = userId;
     next();

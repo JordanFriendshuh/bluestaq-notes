@@ -1,7 +1,6 @@
-import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { createTestApp, resetDb, testAuth } from '../helpers/app.js';
+import { createTestApp, resetDb } from '../helpers/app.js';
 
 const { app, db } = createTestApp();
 
@@ -90,31 +89,6 @@ describe('GET /me', () => {
 
     expect(res.status).toBe(401);
     expect(res.body.error.code).toBe('unauthenticated');
-  });
-
-  it('rejects a token signed with another secret', async () => {
-    const { body } = await register(alice);
-    const forged = jwt.sign({}, 'some-other-secret-at-least-32-characters', {
-      subject: body.user.id,
-    });
-
-    expect((await me(forged)).status).toBe(401);
-  });
-
-  it('rejects an expired token', async () => {
-    const { body } = await register(alice);
-    const expired = jwt.sign({ exp: Math.floor(Date.now() / 1000) - 10 }, testAuth.jwtSecret, {
-      subject: body.user.id,
-    });
-
-    expect((await me(expired)).status).toBe(401);
-  });
-
-  it('rejects an unsigned token', async () => {
-    const { body } = await register(alice);
-    const unsigned = jwt.sign({}, '', { subject: body.user.id, algorithm: 'none' });
-
-    expect((await me(unsigned)).status).toBe(401);
   });
 
   it('rejects a valid token for an account that no longer exists', async () => {

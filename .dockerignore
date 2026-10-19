@@ -3,4 +3,4 @@ dist
 coverage
 .git
 .env
-certs
+secrets

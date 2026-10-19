@@ -1,10 +1,10 @@
 services:
-  certs:
+  secrets:
     image: pgvector/pgvector:pg16
-    entrypoint: ['bash', '/scripts/generate-certs.sh']
+    entrypoint: ['bash', '/scripts/generate.sh']
     volumes:
-      - ./docker/certs/generate-certs.sh:/scripts/generate-certs.sh:ro
-      - ./certs:/certs
+      - ./docker/secrets/generate.sh:/scripts/generate.sh:ro
+      - ./secrets:/secrets
 
   db:
     image: pgvector/pgvector:pg16
@@ -14,36 +14,35 @@ services:
       POSTGRES_PASSWORD: notes
       POSTGRES_DB: notes
     ports:
-      - '${DB_PORT:-5432}:5432'
+      - '127.0.0.1:${DB_PORT:-5432}:5432'
     volumes:
       - db-data:/var/lib/postgresql/data
       - ./docker/initdb:/docker-entrypoint-initdb.d:ro
       - ./docker/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
       - ./docker/postgres/start.sh:/scripts/start.sh:ro
-      - ./certs:/certs:ro
+      - ./secrets:/secrets:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U notes -d notes']
       interval: 2s
       timeout: 3s
       retries: 20
     depends_on:
-      certs:
+      secrets:
         condition: service_completed_successfully
 
   api:
     build: .
     environment:
       DATABASE_URL: postgres://notes:notes@db:5432/notes
-      DATABASE_CA_FILE: /certs/ca.crt
-      TLS_CERT_FILE: /certs/api.crt
-      TLS_KEY_FILE: /certs/api.key
+      DATABASE_CA_FILE: /secrets/ca.crt
+      TLS_CERT_FILE: /secrets/api.crt
+      TLS_KEY_FILE: /secrets/api.key
+      JWT_SECRET_FILE: /secrets/jwt.secret
       PORT: 3000
-      # Local demo only; any real deployment sets its own secret.
-      JWT_SECRET: ${JWT_SECRET:-local-demo-secret-change-me-0123456789}
     ports:
-      - '${API_PORT:-3000}:3000'
+      - '127.0.0.1:${API_PORT:-3000}:3000'
     volumes:
-      - ./certs:/certs:ro
+      - ./secrets:/secrets:ro
     depends_on:
       db:
         condition: service_healthy

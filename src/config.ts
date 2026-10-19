@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 
 const envSchema = z
@@ -14,6 +15,8 @@ const envSchema = z
     JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
     TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
     BCRYPT_ROUNDS: z.coerce.number().int().min(4).max(15).default(12),
+    AUTH_RATE_LIMIT: z.coerce.number().int().positive().default(20),
+    AUTH_RATE_WINDOW_SECONDS: z.coerce.number().int().positive().default(900),
   })
   .superRefine((env, ctx) => {
     if (Boolean(env.TLS_CERT_FILE) !== Boolean(env.TLS_KEY_FILE)) {
@@ -37,9 +40,13 @@ const envSchema = z
 
 export type Config = z.infer<typeof envSchema>;
 
-/** Validates an environment, throwing with every problem listed. */
+/** Validates an environment, throwing with every problem listed; JWT_SECRET_FILE fills in JWT_SECRET. */
 export function parseConfig(env: NodeJS.ProcessEnv): Config {
-  const result = envSchema.safeParse(env);
+  const withSecret =
+    env.JWT_SECRET_FILE && !env.JWT_SECRET
+      ? { ...env, JWT_SECRET: readFileSync(env.JWT_SECRET_FILE, 'utf8').trim() }
+      : env;
+  const result = envSchema.safeParse(withSecret);
   if (!result.success) throw new Error(`Invalid environment:\n${z.prettifyError(result.error)}`);
   return result.data;
 }

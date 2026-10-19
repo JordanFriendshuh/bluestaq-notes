@@ -5,7 +5,7 @@ export const TEST_DATABASE_URL =
 
 export const TEST_DB_TLS = {
   mode: 'verify' as const,
-  caFile: process.env.TEST_DATABASE_CA_FILE ?? 'certs/ca.crt',
+  caFile: process.env.TEST_DATABASE_CA_FILE ?? 'secrets/ca.crt',
 };
 
 /** Opens a TLS-verified pool and Kysely instance on the test database; call db.destroy() in afterAll. */

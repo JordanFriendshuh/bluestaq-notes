@@ -15,8 +15,17 @@ const UNIQUE_VIOLATION = '23505';
 const invalidCredentials = () =>
   new HttpError(401, 'invalid_credentials', 'Email or password is incorrect');
 
-// Compared against when the email is unknown, so a miss costs as much time as a wrong password.
-const DUMMY_HASH = bcrypt.hashSync('timing-equalizer', 10);
+const dummyHashes = new Map<number, string>();
+
+/** A hash at the same cost as real ones, compared when the email is unknown so both paths take equal time. */
+export function dummyHash(bcryptRounds: number): string {
+  let hash = dummyHashes.get(bcryptRounds);
+  if (!hash) {
+    hash = bcrypt.hashSync('timing-equalizer', bcryptRounds);
+    dummyHashes.set(bcryptRounds, hash);
+  }
+  return hash;
+}
 
 export function toPublicUser(user: UserRow): PublicUser {
   return {
@@ -50,14 +59,19 @@ export async function registerUser(
 }
 
 /** Checks credentials and returns the user; unknown email and wrong password look identical. */
-export async function authenticate(db: Db, input: LoginInput): Promise<PublicUser> {
+export async function authenticate(
+  db: Db,
+  input: LoginInput,
+  bcryptRounds: number,
+): Promise<PublicUser> {
   const user = await db
     .selectFrom('users')
     .selectAll()
     .where('email', '=', input.email)
     .executeTakeFirst();
 
-  const passwordMatches = await bcrypt.compare(input.password, user?.passwordHash ?? DUMMY_HASH);
+  const hash = user?.passwordHash ?? dummyHash(bcryptRounds);
+  const passwordMatches = await bcrypt.compare(input.password, hash);
   if (!user || !passwordMatches) throw invalidCredentials();
   return toPublicUser(user);
 }
