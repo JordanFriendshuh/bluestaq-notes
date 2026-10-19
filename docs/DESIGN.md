@@ -2,10 +2,11 @@
 
 ## Scope
 **In:** accounts and auth, teams, notes with optional checklists, sharing notes with users or teams
-as viewer or editor, full-text search, optimistic concurrency, live presence and cursors.
+as viewer or editor, search-as-you-type, optional AI (semantic) search, optimistic concurrency, live
+presence and cursors.
 
 **Out (README "more time" list):** attachments (S3 + presigned URLs), real-time co-editing of content
-(CRDT/Yjs), organizations/tenancy, refresh tokens, notebooks as a shared unit, semantic search.
+(CRDT/Yjs), organizations/tenancy, refresh tokens, notebooks as a shared unit.
 
 ## Data model (PostgreSQL)
 ```
@@ -19,6 +20,8 @@ note_shares  id uuid pk, note_id -> notes on delete cascade,
              user_id -> users null, team_id -> teams null,
              role ('viewer'|'editor'), created_at,
              check (exactly one of user_id, team_id), unique per (note, user) and (note, team)
+note_embeddings  note_id pk -> notes on delete cascade, model, content_hash,
+                 embedding vector, updated_at          (only used when AI search is on)
 ```
 - **Checklists live inside the note** as `items: [{ id, text, done }]`. A note can be prose, a list, or both.
 - **Shares use two nullable foreign keys, not a polymorphic `principal_id`**, so Postgres enforces
@@ -50,6 +53,7 @@ DELETE /teams/:id/members/:userId
 
 POST   /notes                   { title, body?, items? }
 GET    /notes                   ?q=&scope=all|owned|shared&limit=&offset=
+GET    /notes/search/ai         ?q=&limit=   (503 ai_search_disabled when no key is set)
 GET    /notes/:id               -> ETag: "<version>"
 PATCH  /notes/:id               If-Match required; partial { title?, body?, items? }
 DELETE /notes/:id
@@ -70,9 +74,16 @@ Every note has a `version`. `GET` returns it as an ETag. `PATCH` must send `If-M
 the response includes the current note so the client can merge. Two editors can't silently overwrite each other.
 
 ## Search
-One box: the client sends `GET /notes?q=<text>` and gets ranked results, each with a highlighted
-snippet. No tags. Search covers title, body and checklist text, and it only searches notes the caller
-can read (same access CTE, same query).
+Two steps from one search box. No tags.
+
+1. **As you type:** fast, ranked, typo-tolerant search on every keystroke (`GET /notes?q=`).
+2. **AI search:** if the user doesn't find the note, they ask for AI search (`GET /notes/search/ai?q=`),
+   which matches by meaning, not wording. It only works when the operator has set an API key.
+
+Both search title, body and checklist text, and both only return notes the caller can read (same
+access CTE in the same query). Each result comes with a highlighted snippet.
+
+### As you type
 
 - **Full-text:** the generated `search` tsvector with a GIN index, so stemming works ("meeting"
   matches "meetings") and title hits rank above body hits. Each word of the query becomes a prefix
@@ -81,8 +92,20 @@ can read (same access CTE, same query).
 - **Ranking:** `ts_rank` plus title similarity. `ts_headline` produces the snippet.
 - With no `q`, results sort by `updated_at` desc.
 
-It all runs inside Postgres: no extra service to run or keep in sync. Semantic (embedding) search with
-pgvector is the natural next step for vague, meaning-based queries, as a hybrid with this one.
+It all runs inside Postgres: no extra service to run or keep in sync.
+
+### AI search (optional)
+- **Turned on by config.** `EMBEDDINGS_API_KEY` (plus the provider and model) in the environment.
+  Without a key, the service runs normally and the AI endpoint returns 503 `ai_search_disabled`.
+- **Embeddings with pgvector.** When a note is created or updated, its title, body and items are
+  embedded *after* the response is sent, so the provider's latency and outages never block a save.
+  `content_hash` skips the call when the text hasn't changed. On startup, notes with no embedding or a
+  stale one get backfilled.
+- **Query:** embed the query, then a nearest-neighbor search (cosine distance) over the caller's readable notes.
+- **The provider sits behind a small interface** (`embed(texts) -> vectors`), so swapping vendors or
+  pointing at a local model touches one file.
+- **Privacy tradeoff:** note text goes to a third party. That's why it's off by default and enabled per deployment.
+- The Postgres image becomes `pgvector/pgvector:pg16`, which runs the same with or without the feature.
 
 ## Presence and cursors
 A WebSocket at `/ws`. The client authenticates with the same JWT on connect, then joins notes.

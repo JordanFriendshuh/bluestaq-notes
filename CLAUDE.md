@@ -9,7 +9,8 @@ change behavior, and update it in the same PR when behavior changes.
 
 ## Stack
 - Node 22 (`.nvmrc`), TypeScript (strict), Express 5
-- PostgreSQL 16, with plain SQL migrations in `migrations/` and Kysely for typed queries
+- PostgreSQL 16 with pg_trgm and pgvector, plain SQL migrations in `migrations/`, Kysely for typed queries
+- AI search is optional and only on when `EMBEDDINGS_API_KEY` is set. Everything else must work without it.
 - zod validates every request body, query and param at the route boundary
 - Auth: bcryptjs password hashes, JWT bearer tokens (jsonwebtoken)
 - Presence: `ws` WebSocket server on the same HTTP server
