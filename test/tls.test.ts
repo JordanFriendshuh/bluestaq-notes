@@ -8,8 +8,8 @@ import { createTestApp } from './helpers/app.js';
 import { TEST_DATABASE_URL } from './helpers/db.js';
 
 const { app, db } = createTestApp();
-const server = createServer(app, { certFile: 'certs/api.crt', keyFile: 'certs/api.key' });
-const ca = readFileSync('certs/ca.crt');
+const server = createServer(app, { certFile: 'secrets/api.crt', keyFile: 'secrets/api.key' });
+const ca = readFileSync('secrets/ca.crt');
 let port: number;
 
 beforeAll(() => new Promise<void>((resolve) => server.listen(0, resolve)));

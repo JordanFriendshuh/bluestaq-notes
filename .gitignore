@@ -3,5 +3,5 @@ dist/
 coverage/
 .env
 *.log
-certs/*
-!certs/.gitkeep
+secrets/*
+!secrets/.gitkeep
