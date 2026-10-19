@@ -32,12 +32,21 @@ note_embeddings  note_id pk -> notes on delete cascade, model, content_hash,
 ## Auth
 - Email + password. Passwords are hashed with bcrypt (cost 12, configurable). They're limited to 72
   *bytes*, because bcrypt silently ignores anything past that.
-- Login returns an HS256 JWT (`sub` = user id) that lasts 1 hour. Verification pins the algorithm,
-  so `alg: none` and algorithm-swap tokens get rejected.
-- Unknown email and wrong password return the same 401 and take the same time (a dummy hash
-  gets compared), so the endpoint can't be used to find out which emails have accounts.
+- Login returns an HS256 JWT (`sub` = user id) that lasts 1 hour. Verification pins the algorithm
+  (so `alg: none` and algorithm-swap tokens get rejected), checks issuer and audience, and requires
+  `sub` to be a UUID. The `Bearer` scheme name is case-insensitive.
+- The signing key is never in the repo. Compose generates a random one into `./secrets` and passes
+  it as `JWT_SECRET_FILE`.
+- Register and login share a per-IP rate limit (20 per 15 minutes by default, then 429 `rate_limited`).
+  It slows password guessing and caps how much bcrypt CPU one client can burn. Behind a
+  TLS-terminating proxy, the app trusts one `X-Forwarded-For` hop so each client gets its own limit.
+- Unknown email and wrong password return the same 401 and take the same time (a dummy hash at the
+  configured cost gets compared), so login can't be used to find out which emails have accounts.
+  Registration does reveal it (409 `email_taken`). That's the usual tradeoff for a clear signup error;
+  the rate limit caps how fast anyone can probe it.
 - Emails are `citext`: unique and matched without regard to case.
-- Not built (README "more time" list): refresh tokens and revocation, login rate limiting, email verification.
+- Not built (README "more time" list): refresh tokens and revocation, per-account lockout, a shared
+  rate-limit store (Redis) for multiple instances, email verification.
 
 ## Data protection
 - **In transit: TLS everywhere, including the local demo.**
@@ -55,6 +64,14 @@ note_embeddings  note_id pk -> notes on delete cascade, model, content_hash,
   that never need to be searched could be encrypted in the app with KMS-managed keys if a future
   requirement calls for it.
 - **Passwords** are bcrypt hashes. They're never stored or logged, and can't be reversed.
+
+## Input hygiene
+- Every body goes through zod. Unknown fields are dropped, so `id`, `passwordHash` and similar can't
+  be set by clients, and `__proto__` keys never reach our objects.
+- One-line text (names, titles) rejects control characters. That covers NUL (which Postgres can't
+  store, so it used to become a 500), newlines (log/header injection) and terminal escape sequences.
+- JSON only, 256 KB max (413 above that), and helmet's security headers (HSTS, nosniff, frame options)
+  on every response, error responses included.
 
 ## Permissions
 | Action                      | Owner | Editor | Viewer |

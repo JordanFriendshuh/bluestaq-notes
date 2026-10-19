@@ -52,10 +52,15 @@ Routes parse input and shape output. Services hold the logic and the SQL. Routes
   the caller can read the note but lacks the role for this action.
 - Note updates require `If-Match: <version>` (428 if missing, 409 on mismatch).
 - Passwords and tokens never appear in logs or responses.
+- One-line user text uses `singleLineText()` from `src/http/text.ts`. Never use a bare `z.string()` for
+  something a person types in.
+- Every security fix ships with a test in `test/security/` that fails on the old code.
 
 ## Workflow
 - Jordan reviews every change as a PR. Work on a branch (`feat/…`, `fix/…`, `docs/…`), open a PR with
   `gh pr create`, and stop. **Never push to `main`, never merge.**
+- Branch from `main` and target `main`. Avoid stacked PRs. If one is unavoidable, retarget it to
+  `main` after its base merges and *before* merging it.
 - One concern per PR, small enough to review in one sitting. The PR description says what changed,
   why, and how it was tested.
 - Commits are small and real, with imperative subject lines. The commit history is part of the
