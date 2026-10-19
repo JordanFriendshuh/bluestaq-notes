@@ -1,8 +1,14 @@
+export interface ErrorDetail {
+  path: string;
+  message: string;
+}
+
 export class HttpError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
     message: string,
+    readonly details?: ErrorDetail[],
   ) {
     super(message);
     this.name = 'HttpError';
