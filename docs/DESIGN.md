@@ -39,6 +39,23 @@ note_embeddings  note_id pk -> notes on delete cascade, model, content_hash,
 - Emails are `citext`: unique and matched without regard to case.
 - Not built (README "more time" list): refresh tokens and revocation, login rate limiting, email verification.
 
+## Data protection
+- **In transit: TLS everywhere, including the local demo.**
+  - Clients reach the API over HTTPS (TLS 1.2+), and presence uses `wss://`.
+  - The API connects to Postgres with certificate *and* hostname verification. Postgres's `pg_hba`
+    rejects any TCP connection that isn't TLS.
+  - Compose creates a private CA on first start. A real deployment supplies its own certificates,
+    or sets `TLS_TERMINATED_UPSTREAM=true` behind a TLS-terminating load balancer.
+  - In production, config refuses to start with plain HTTP or `DATABASE_TLS=off`.
+- **At rest: we recommend disk or volume encryption for the deployed database** (managed-database
+  encryption, encrypted EBS, or LUKS). It covers data files, WAL and backups with no code changes.
+  Managed services (RDS, MongoDB Atlas) do the same.
+- **Why not column-level encryption:** Postgres can't run full-text search, trigram matching or
+  embeddings on ciphertext, so encrypting note content in the database would disable search. Fields
+  that never need to be searched could be encrypted in the app with KMS-managed keys if a future
+  requirement calls for it.
+- **Passwords** are bcrypt hashes. They're never stored or logged, and can't be reversed.
+
 ## Permissions
 | Action                      | Owner | Editor | Viewer |
 |-----------------------------|:-----:|:------:|:------:|
