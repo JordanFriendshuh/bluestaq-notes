@@ -1,10 +1,8 @@
 import request from 'supertest';
 import { afterAll, describe, expect, it } from 'vitest';
-import { createApp } from '../src/app.js';
-import { openTestDb } from './helpers/db.js';
+import { createTestApp } from './helpers/app.js';
 
-const { db } = openTestDb();
-const app = createApp({ db });
+const { app, db } = createTestApp();
 
 afterAll(() => db.destroy());
 
