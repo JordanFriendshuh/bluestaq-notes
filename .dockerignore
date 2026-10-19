@@ -3,3 +3,4 @@ dist
 coverage
 .git
 .env
+certs

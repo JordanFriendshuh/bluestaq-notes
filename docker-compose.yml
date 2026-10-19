@@ -1,6 +1,14 @@
 services:
+  certs:
+    image: pgvector/pgvector:pg16
+    entrypoint: ['bash', '/scripts/generate-certs.sh']
+    volumes:
+      - ./docker/certs/generate-certs.sh:/scripts/generate-certs.sh:ro
+      - ./certs:/certs
+
   db:
     image: pgvector/pgvector:pg16
+    entrypoint: ['bash', '/scripts/start.sh']
     environment:
       POSTGRES_USER: notes
       POSTGRES_PASSWORD: notes
@@ -10,21 +18,32 @@ services:
     volumes:
       - db-data:/var/lib/postgresql/data
       - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+      - ./docker/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ./docker/postgres/start.sh:/scripts/start.sh:ro
+      - ./certs:/certs:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U notes -d notes']
       interval: 2s
       timeout: 3s
       retries: 20
+    depends_on:
+      certs:
+        condition: service_completed_successfully
 
   api:
     build: .
     environment:
       DATABASE_URL: postgres://notes:notes@db:5432/notes
+      DATABASE_CA_FILE: /certs/ca.crt
+      TLS_CERT_FILE: /certs/api.crt
+      TLS_KEY_FILE: /certs/api.key
       PORT: 3000
       # Local demo only; any real deployment sets its own secret.
       JWT_SECRET: ${JWT_SECRET:-local-demo-secret-change-me-0123456789}
     ports:
       - '${API_PORT:-3000}:3000'
+    volumes:
+      - ./certs:/certs:ro
     depends_on:
       db:
         condition: service_healthy

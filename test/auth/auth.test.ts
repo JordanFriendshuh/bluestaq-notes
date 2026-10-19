@@ -40,16 +40,27 @@ describe('POST /auth/register', () => {
   });
 
   it.each([
-    ['an invalid email', { ...alice, email: 'not-an-email' }],
-    ['a short password', { ...alice, password: 'short' }],
-    ['a password over 72 bytes', { ...alice, password: 'é'.repeat(37) }],
-    ['a blank display name', { ...alice, displayName: '   ' }],
-    ['a missing field', { email: alice.email, password: alice.password }],
-  ])('rejects %s', async (_label, body) => {
+    ['an invalid email', { ...alice, email: 'not-an-email' }, 'email'],
+    ['a short password', { ...alice, password: 'short' }, 'password'],
+    ['a password over 72 bytes', { ...alice, password: 'é'.repeat(37) }, 'password'],
+    ['a blank display name', { ...alice, displayName: '   ' }, 'displayName'],
+    ['a missing field', { email: alice.email, password: alice.password }, 'displayName'],
+  ])('rejects %s and names the field', async (_label, body, path) => {
     const res = await register(body);
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_failed');
+    expect(res.body.error.details).toEqual([{ path, message: expect.any(String) }]);
+  });
+
+  it('lists every invalid field at once', async () => {
+    const res = await register({ email: 'nope', password: 'short' });
+
+    expect(res.body.error.details.map((d: { path: string }) => d.path)).toEqual([
+      'email',
+      'password',
+      'displayName',
+    ]);
   });
 });
 
