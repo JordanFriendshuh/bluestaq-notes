@@ -11,7 +11,12 @@ const applied = await runMigrations(pool);
 if (applied.length > 0) logger.info({ applied }, 'migrations applied');
 
 const db = createDb(pool);
-const server = createApp({ db }).listen(config.PORT, () => {
+const auth = {
+  jwtSecret: config.JWT_SECRET,
+  tokenTtlSeconds: config.TOKEN_TTL_SECONDS,
+  bcryptRounds: config.BCRYPT_ROUNDS,
+};
+const server = createApp({ db, auth }).listen(config.PORT, () => {
   logger.info({ port: config.PORT }, 'listening');
 });
 
