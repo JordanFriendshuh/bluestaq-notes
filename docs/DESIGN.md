@@ -2,8 +2,8 @@
 
 ## Scope
 **In:** accounts and auth, teams, notes with optional checklists, sharing notes with users or teams
-as viewer or editor, search-as-you-type, optional AI (semantic) search, optimistic concurrency, live
-presence and cursors.
+as viewer or editor, search-as-you-type, AI (semantic) search with a local embedding model,
+optimistic concurrency, live presence and cursors.
 
 **Out (README "more time" list):** attachments (S3 + presigned URLs), real-time co-editing of content
 (CRDT/Yjs), organizations/tenancy, refresh tokens, notebooks as a shared unit.
@@ -21,7 +21,7 @@ note_shares  id uuid pk, note_id -> notes on delete cascade,
              role ('viewer'|'editor'), created_at,
              check (exactly one of user_id, team_id), unique per (note, user) and (note, team)
 note_embeddings  note_id pk -> notes on delete cascade, model, content_hash,
-                 embedding vector, updated_at          (only used when AI search is on)
+                 embedding vector(384), updated_at
 ```
 - **Checklists live inside the note** as `items: [{ id, text, done }]`. A note can be prose, a list, or both.
 - **Shares use two nullable foreign keys, not a polymorphic `principal_id`**, so Postgres enforces
@@ -53,7 +53,7 @@ DELETE /teams/:id/members/:userId
 
 POST   /notes                   { title, body?, items? }
 GET    /notes                   ?q=&scope=all|owned|shared&limit=&offset=
-GET    /notes/search/ai         ?q=&limit=   (503 ai_search_disabled when no key is set)
+GET    /notes/search/ai         ?q=&limit=   (503 ai_search_disabled when AI_SEARCH=off)
 GET    /notes/:id               -> ETag: "<version>"
 PATCH  /notes/:id               If-Match required; partial { title?, body?, items? }
 DELETE /notes/:id
@@ -78,7 +78,7 @@ Two steps from one search box. No tags.
 
 1. **As you type:** fast, ranked, typo-tolerant search on every keystroke (`GET /notes?q=`).
 2. **AI search:** if the user doesn't find the note, they ask for AI search (`GET /notes/search/ai?q=`),
-   which matches by meaning, not wording. It only works when the operator has set an API key.
+   which matches by meaning, not wording. It runs on an embedding model inside the service.
 
 Both search title, body and checklist text, and both only return notes the caller can read (same
 access CTE in the same query). Each result comes with a highlighted snippet.
@@ -94,18 +94,21 @@ access CTE in the same query). Each result comes with a highlighted snippet.
 
 It all runs inside Postgres: no extra service to run or keep in sync.
 
-### AI search (optional)
-- **Turned on by config.** `EMBEDDINGS_API_KEY` (plus the provider and model) in the environment.
-  Without a key, the service runs normally and the AI endpoint returns 503 `ai_search_disabled`.
-- **Embeddings with pgvector.** When a note is created or updated, its title, body and items are
-  embedded *after* the response is sent, so the provider's latency and outages never block a save.
-  `content_hash` skips the call when the text hasn't changed. On startup, notes with no embedding or a
-  stale one get backfilled.
-- **Query:** embed the query, then a nearest-neighbor search (cosine distance) over the caller's readable notes.
-- **The provider sits behind a small interface** (`embed(texts) -> vectors`), so swapping vendors or
-  pointing at a local model touches one file.
-- **Privacy tradeoff:** note text goes to a third party. That's why it's off by default and enabled per deployment.
-- The Postgres image becomes `pgvector/pgvector:pg16`, which runs the same with or without the feature.
+### AI search
+- **A local embedding model, no API key.** `bge-small-en-v1.5` (384 dimensions, about 35 MB quantized)
+  runs in-process with `@huggingface/transformers` (ONNX on the CPU). Note text never leaves the server,
+  and the feature costs nothing.
+- **The model is baked into the Docker image** at build time, so the first search is fast and the
+  service runs offline. The tradeoff is a bigger image and some CPU used per save.
+- **Embedding with pgvector.** When a note is created or updated, its title, body and items are embedded
+  *after* the response is sent, so a save never waits on the model. `content_hash` skips the work when
+  the text hasn't changed. On startup, notes with no embedding or a stale one get backfilled.
+- **Query:** embed the query (with bge's query prefix), then a nearest-neighbor search (cosine distance)
+  over the caller's readable notes.
+- **The embedder sits behind a small interface** (`embed(texts) -> vectors`). Tests use a deterministic
+  fake, and a hosted provider could be swapped in with one file.
+- `AI_SEARCH=off` turns it off for low-resource deployments. The endpoint then returns 503 `ai_search_disabled`.
+- The Postgres image is `pgvector/pgvector:pg16`.
 
 ## Presence and cursors
 A WebSocket at `/ws`. The client authenticates with the same JWT on connect, then joins notes.
