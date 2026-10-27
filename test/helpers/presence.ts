@@ -99,6 +99,11 @@ export class TestClient {
     });
   }
 
+  /** Forgets buffered messages, so later waits only see what arrives from now on. */
+  drain(): void {
+    this.received.length = 0;
+  }
+
   /** Every message received so far that nobody waited for. */
   unread(): Message[] {
     return [...this.received];

@@ -54,6 +54,7 @@ function api(method: 'patch' | 'post' | 'delete', path: string, body: object = {
     .send(body);
 }
 
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const userIds = (m: Message) => (m.users as { userId: string }[]).map((u) => u.userId);
 
 describe('authentication', () => {
@@ -110,7 +111,7 @@ describe('rooms and presence', () => {
 
     expect(await outsider.next('error')).toMatchObject({ code: 'not_found' });
     await api('patch', `/notes/${noteId}`, { body: 'secret' }).expect(200);
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await pause(100);
     expect(outsider.unread()).toEqual([]);
   });
 
@@ -205,7 +206,7 @@ describe('live changes from REST', () => {
     await client.next('note.updated');
 
     await api('patch', `/notes/${noteId}`, { body: 'stale' }).expect(409);
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await pause(100);
     expect(client.unread().filter((m) => m.type === 'note.updated')).toEqual([]);
   });
 });
@@ -234,5 +235,91 @@ describe('heartbeat', () => {
     expect(userIds(await live.next('presence', (m) => userIds(m).length === 1))).toEqual([
       owner.user.id,
     ]);
+  });
+});
+
+describe('shared notes', () => {
+  let guest: TestUser;
+  let shareId: string;
+
+  const share = (role: 'viewer' | 'editor') =>
+    request(app)
+      .put(`/notes/${noteId}/shares`)
+      .set('Authorization', `Bearer ${owner.token}`)
+      .send({ userEmail: guest.user.email, role });
+
+  beforeEach(async () => {
+    guest = await registerTestUser(app, 'guest');
+    shareId = (await share('viewer')).body.share.id;
+  });
+
+  it('lets a viewer watch but not mark themselves as editing', async () => {
+    const client = await joined(guest);
+    client.send({ type: 'activity', noteId, mode: 'editing' });
+
+    expect(await client.next('error')).toMatchObject({ code: 'forbidden' });
+  });
+
+  it('removes someone from the room the moment their share is deleted', async () => {
+    const watcher = await joined(owner);
+    const client = await joined(guest);
+    await watcher.next('presence', (m) => userIds(m).includes(guest.user.id));
+
+    await request(app)
+      .delete(`/notes/${noteId}/shares/${shareId}`)
+      .set('Authorization', `Bearer ${owner.token}`)
+      .expect(204);
+
+    expect(await client.next('access.revoked')).toEqual({ type: 'access.revoked', noteId });
+    expect(userIds(await watcher.next('presence'))).toEqual([owner.user.id]);
+    await api('patch', `/notes/${noteId}`, { body: 'after revoke' }).expect(200);
+    await pause(100);
+    expect(client.unread().filter((m) => m.type === 'note.updated')).toEqual([]);
+  });
+
+  it('drops an editor to viewing when downgraded', async () => {
+    await share('editor');
+    const watcher = await joined(owner);
+    const client = await joined(guest);
+    client.send({ type: 'activity', noteId, mode: 'editing' });
+    await watcher.next('presence', (m) =>
+      (m.users as { userId: string; mode: string }[]).some(
+        (u) => u.userId === guest.user.id && u.mode === 'editing',
+      ),
+    );
+
+    watcher.drain();
+    await share('viewer');
+
+    const presence = await watcher.next('presence', (m) =>
+      (m.users as { userId: string; mode: string }[]).some(
+        (u) => u.userId === guest.user.id && u.mode === 'viewing',
+      ),
+    );
+    expect(presence).toBeDefined();
+  });
+
+  it('removes a team member from the room when they leave the team', async () => {
+    const member = await registerTestUser(app, 'member');
+    const auth = `Bearer ${owner.token}`;
+    const teamId = (
+      await request(app).post('/teams').set('Authorization', auth).send({ name: 'T' })
+    ).body.team.id;
+    await request(app)
+      .post(`/teams/${teamId}/members`)
+      .set('Authorization', auth)
+      .send({ email: member.user.email });
+    await request(app)
+      .put(`/notes/${noteId}/shares`)
+      .set('Authorization', auth)
+      .send({ teamId, role: 'viewer' });
+    const client = await joined(member);
+
+    await request(app)
+      .delete(`/teams/${teamId}/members/${member.user.id}`)
+      .set('Authorization', `Bearer ${member.token}`)
+      .expect(204);
+
+    expect(await client.next('access.revoked')).toMatchObject({ noteId });
   });
 });
