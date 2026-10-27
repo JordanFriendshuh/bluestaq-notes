@@ -76,8 +76,9 @@ Routes parse input and shape output. Services hold the logic and the SQL. Routes
   team member, stranger.
 
 ## Before submission
-- Review every SQL query for efficiency: run `EXPLAIN ANALYZE` on realistic data, check index use
-  (especially the note access CTE and search), and look for N+1 queries and missing indexes.
+- Review every SQL query for efficiency: `npm run perf:explain` (add `-- --verbose` for full plans)
+  runs every service query at realistic volume. Check index use, look for N+1 queries and missing
+  indexes, and update the table in `docs/DESIGN.md` "Query performance".
 
 ## README requirements (from the challenge)
 The final README must have: how to run it and run the tests, the 2–3 design choices we spent the most
