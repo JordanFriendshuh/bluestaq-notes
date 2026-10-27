@@ -66,6 +66,9 @@ Routes parse input and shape output. Services hold the logic and the SQL. Routes
   `main` after its base merges and *before* merging it.
 - One concern per PR, small enough to review in one sitting. The PR description says what changed,
   why, and how it was tested.
+- PR descriptions only mention bugs that existed before the PR's work started (on `main` or already
+  shipped). Mistakes made and fixed while building the PR stay out; describe a regression test by
+  what it protects against.
 - Commits are small and real, with imperative subject lines. The commit history is part of the
   submission.
 - Before opening a PR: `npm run lint`, `npm run typecheck`, `npm test` all pass. Say in the PR if anything was skipped.
