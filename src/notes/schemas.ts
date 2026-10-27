@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { newItemsSchema } from '../checklists/schemas.js';
 import { multiLineText, singleLineText } from '../http/text.js';
 
 const title = singleLineText(1, 200);
@@ -7,6 +8,7 @@ const body = multiLineText(50_000);
 export const createNoteSchema = z.object({
   title,
   body: body.default(''),
+  items: newItemsSchema.default([]),
 });
 
 export const updateNoteSchema = z
