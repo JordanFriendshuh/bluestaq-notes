@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . && prettier --check .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "perf:explain": "tsx scripts/perf/explain.ts"
   },
   "repository": {
     "type": "git",
