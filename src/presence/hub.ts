@@ -50,6 +50,15 @@ export class PresenceHub {
     return count;
   }
 
+  /** A snapshot of every membership, or only one note's, safe to iterate while rooms change. */
+  memberships(noteId?: string): { noteId: string; socket: WebSocket; member: Member }[] {
+    const rooms =
+      noteId === undefined ? [...this.rooms] : [[noteId, this.rooms.get(noteId)] as const];
+    return rooms.flatMap(([id, room]) =>
+      [...(room ?? [])].map(([socket, member]) => ({ noteId: id, socket, member })),
+    );
+  }
+
   member(noteId: string, socket: WebSocket): Member | undefined {
     return this.rooms.get(noteId)?.get(socket);
   }

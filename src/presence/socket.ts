@@ -39,7 +39,34 @@ export function attachPresence(server: http.Server, options: PresenceOptions) {
   const wss = new WebSocketServer({ server, path: '/ws', maxPayload: WS_LIMITS.maxMessageBytes });
   const hub = new PresenceHub(WS_LIMITS.maxBufferedBytes);
   const connectionsByUser = new Map<string, number>();
-  const unsubscribe = events.subscribe((event) => hub.forward(event));
+  const unsubscribe = events.subscribe((event) => {
+    if (event.type !== 'access.changed') return hub.forward(event);
+    recheckAccess(event.noteId).catch((err: unknown) => {
+      logger.error({ err }, 'presence access recheck failed');
+    });
+  });
+
+  /**
+   * Re-runs the access check for everyone in the affected rooms: anyone who lost access is removed
+   * and told, and anyone downgraded to viewer stops showing as editing.
+   */
+  async function recheckAccess(noteId?: string): Promise<void> {
+    const roles = new Map<string, ReturnType<typeof noteRole>>();
+    for (const { noteId: id, socket, member } of hub.memberships(noteId)) {
+      const key = `${id}:${member.userId}`;
+      if (!roles.has(key)) roles.set(key, noteRole(db, id, member.userId));
+      const role = await roles.get(key);
+      if (!role) {
+        hub.leave(id, socket);
+        if (socket.readyState === socket.OPEN) {
+          socket.send(JSON.stringify({ type: 'access.revoked', noteId: id }));
+        }
+      } else if (role !== member.role) {
+        const mode = canEdit(role) ? member.mode : 'viewing';
+        hub.update(id, socket, { role, mode });
+      }
+    }
+  }
   const alive = new WeakSet<WebSocket>();
 
   wss.on('connection', (socket) => {
