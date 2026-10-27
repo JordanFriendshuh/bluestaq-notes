@@ -7,6 +7,7 @@ import { checklistRoutes } from './checklists/routes.js';
 import type { NoteEvents } from './events.js';
 import { errorHandler, unknownRoute } from './http/error-handler.js';
 import { noteRoutes } from './notes/routes.js';
+import { shareRoutes } from './shares/routes.js';
 import { teamRoutes } from './teams/routes.js';
 
 export interface AppDeps {
@@ -29,9 +30,10 @@ export function createApp({ db, auth, events, behindProxy = false }: AppDeps) {
     res.json({ status: 'ok' });
   });
   app.use(authRoutes(db, auth));
-  app.use(teamRoutes(db, auth));
+  app.use(teamRoutes(db, auth, events));
   app.use(noteRoutes(db, auth, events));
   app.use(checklistRoutes(db, auth, events));
+  app.use(shareRoutes(db, auth, events));
 
   app.use(unknownRoute);
   app.use(errorHandler);
