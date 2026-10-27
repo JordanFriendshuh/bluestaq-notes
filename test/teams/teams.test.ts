@@ -98,6 +98,29 @@ describe('GET /teams/:id', () => {
   });
 });
 
+describe('DELETE /teams/:id', () => {
+  it('lets an owner delete the team, removing it for every member', async () => {
+    const teamId = await teamWith(owner, [member]);
+
+    expect((await as(owner).delete(`/teams/${teamId}`)).status).toBe(204);
+    expect((await as(member).get('/teams')).body.teams).toEqual([]);
+    const memberships = await db
+      .selectFrom('teamMembers')
+      .selectAll()
+      .where('teamId', '=', teamId)
+      .execute();
+    expect(memberships).toEqual([]);
+  });
+
+  it('returns 403 to a member and 404 to a stranger, and keeps the team', async () => {
+    const teamId = await teamWith(owner, [member]);
+
+    expect((await as(member).delete(`/teams/${teamId}`)).status).toBe(403);
+    expect((await as(stranger).delete(`/teams/${teamId}`)).status).toBe(404);
+    expect((await as(owner).get(`/teams/${teamId}`)).status).toBe(200);
+  });
+});
+
 describe('POST /teams/:id/members', () => {
   it('lets an owner add a user by email, in any case', async () => {
     const teamId = await teamWith(owner);

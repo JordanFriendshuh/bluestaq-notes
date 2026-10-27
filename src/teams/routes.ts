@@ -9,7 +9,7 @@ import {
   memberParamsSchema,
   teamParamsSchema,
 } from './schemas.js';
-import { addMember, createTeam, getTeam, listTeams, removeMember } from './service.js';
+import { addMember, createTeam, deleteTeam, getTeam, listTeams, removeMember } from './service.js';
 
 export function teamRoutes(db: Db, settings: TokenSettings): Router {
   const router = Router();
@@ -27,6 +27,12 @@ export function teamRoutes(db: Db, settings: TokenSettings): Router {
   router.get('/teams/:id', async (req, res) => {
     const { id } = parse(teamParamsSchema, req.params);
     res.json({ team: await getTeam(db, callerId(req), id) });
+  });
+
+  router.delete('/teams/:id', async (req, res) => {
+    const { id } = parse(teamParamsSchema, req.params);
+    await deleteTeam(db, callerId(req), id);
+    res.status(204).end();
   });
 
   router.post('/teams/:id/members', async (req, res) => {

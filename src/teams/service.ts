@@ -99,6 +99,12 @@ async function listMembers(db: Db, teamId: string): Promise<TeamMember[]> {
     .execute();
 }
 
+/** Deletes the team and its memberships; owners only. */
+export async function deleteTeam(db: Db, callerId: string, teamId: string): Promise<void> {
+  if ((await requireMember(db, teamId, callerId)) !== 'owner') throw ownerOnly();
+  await db.deleteFrom('teams').where('id', '=', teamId).execute();
+}
+
 /** Adds an existing user to the team by email; owners only. */
 export async function addMember(
   db: Db,
