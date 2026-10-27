@@ -1,4 +1,4 @@
-import type { Generated, Selectable } from 'kysely';
+import type { ColumnType, Generated, Selectable } from 'kysely';
 
 // Columns are camelCase here; CamelCasePlugin maps them to the snake_case names in SQL.
 export interface UsersTable {
@@ -25,11 +25,19 @@ export interface TeamMembersTable {
   createdAt: Generated<Date>;
 }
 
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
 export interface NotesTable {
   id: Generated<string>;
   ownerId: string;
   title: string;
   body: Generated<string>;
+  // pg parses jsonb on read; writes take a JSON string.
+  items: ColumnType<ChecklistItem[], string | undefined, string>;
   createdAt: Generated<Date>;
   updatedAt: Generated<Date>;
 }
