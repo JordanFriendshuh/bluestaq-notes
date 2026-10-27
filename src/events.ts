@@ -20,16 +20,20 @@ export type NoteEvent =
     }
   | { type: 'item.deleted'; noteId: string; by: string; itemId: string };
 
+/** Someone may have lost or changed access: everyone on one note, or the given users on every note. */
+export type AccessChanged =
+  { type: 'access.changed'; noteId: string } | { type: 'access.changed'; userIds: string[] };
+
 /** In-process fan-out of note changes; more than one process would need Redis pub/sub here. */
 export class NoteEvents {
   private readonly emitter = new EventEmitter();
 
-  publish(event: NoteEvent): void {
+  publish(event: NoteEvent | AccessChanged): void {
     this.emitter.emit('event', event);
   }
 
   /** Calls `listener` for every event until the returned function is called. */
-  subscribe(listener: (event: NoteEvent) => void): () => void {
+  subscribe(listener: (event: NoteEvent | AccessChanged) => void): () => void {
     this.emitter.on('event', listener);
     return () => this.emitter.off('event', listener);
   }

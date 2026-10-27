@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { callerId, requireAuth } from '../auth/middleware.js';
 import type { TokenSettings } from '../auth/tokens.js';
 import type { Db } from '../db/index.js';
+import type { NoteEvents } from '../events.js';
 import { parse } from '../http/validate.js';
 import {
   addMemberSchema,
@@ -11,7 +12,7 @@ import {
 } from './schemas.js';
 import { addMember, createTeam, deleteTeam, getTeam, listTeams, removeMember } from './service.js';
 
-export function teamRoutes(db: Db, settings: TokenSettings): Router {
+export function teamRoutes(db: Db, settings: TokenSettings, events: NoteEvents): Router {
   const router = Router();
   router.use('/teams', requireAuth(settings));
 
@@ -31,7 +32,8 @@ export function teamRoutes(db: Db, settings: TokenSettings): Router {
 
   router.delete('/teams/:id', async (req, res) => {
     const { id } = parse(teamParamsSchema, req.params);
-    await deleteTeam(db, callerId(req), id);
+    const formerMembers = await deleteTeam(db, callerId(req), id);
+    events.publish({ type: 'access.changed', userIds: formerMembers });
     res.status(204).end();
   });
 
@@ -44,6 +46,7 @@ export function teamRoutes(db: Db, settings: TokenSettings): Router {
   router.delete('/teams/:id/members/:userId', async (req, res) => {
     const { id, userId } = parse(memberParamsSchema, req.params);
     await removeMember(db, callerId(req), id, userId);
+    events.publish({ type: 'access.changed', userIds: [userId] });
     res.status(204).end();
   });
 

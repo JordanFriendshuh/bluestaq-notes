@@ -46,12 +46,24 @@ export interface NoteItemsTable {
   updatedAt: Generated<Date>;
 }
 
+export type ShareRole = 'viewer' | 'editor';
+
+export interface NoteSharesTable {
+  id: Generated<string>;
+  noteId: string;
+  userId: string | null;
+  teamId: string | null;
+  role: ShareRole;
+  createdAt: Generated<Date>;
+}
+
 export interface Database {
   users: UsersTable;
   teams: TeamsTable;
   teamMembers: TeamMembersTable;
   notes: NotesTable;
   noteItems: NoteItemsTable;
+  noteShares: NoteSharesTable;
 }
 
 export type UserRow = Selectable<UsersTable>;

@@ -1,19 +1,26 @@
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import WebSocket from 'ws';
+import type { Db } from '../../src/db/index.js';
 import { attachPresence } from '../../src/presence/socket.js';
 import { createTestApp } from './app.js';
 
-/** The app plus /ws on a real server on a random local port; call close() in afterAll. */
-export async function startPresenceServer(options: { heartbeatMs?: number } = {}) {
+/**
+ * The app plus /ws on a real server on a random local port; call close() in afterAll.
+ * `presenceDb` lets a test give the socket server a different handle, such as a deliberately slow one.
+ */
+export async function startPresenceServer(
+  options: { heartbeatMs?: number; presenceDb?: (db: Db) => Db } = {},
+) {
+  const { presenceDb, ...presenceOptions } = options;
   const ctx = createTestApp();
   const server = http.createServer(ctx.app);
   const presence = attachPresence(server, {
-    db: ctx.db,
+    db: presenceDb ? presenceDb(ctx.db) : ctx.db,
     auth: ctx.auth,
     events: ctx.events,
     authTimeoutMs: 200,
-    ...options,
+    ...presenceOptions,
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as AddressInfo;
@@ -97,6 +104,11 @@ export class TestClient {
         },
       });
     });
+  }
+
+  /** Forgets buffered messages, so later waits only see what arrives from now on. */
+  drain(): void {
+    this.received.length = 0;
   }
 
   /** Every message received so far that nobody waited for. */

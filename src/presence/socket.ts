@@ -3,7 +3,7 @@ import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import { findUserById } from '../auth/service.js';
 import { verifyTokenClaims, type TokenSettings } from '../auth/tokens.js';
 import type { Db } from '../db/index.js';
-import type { NoteEvents } from '../events.js';
+import type { AccessChanged, NoteEvents } from '../events.js';
 import { logger } from '../logger.js';
 import { canEdit, noteRole } from '../notes/access.js';
 import { PresenceHub } from './hub.js';
@@ -39,8 +39,52 @@ export function attachPresence(server: http.Server, options: PresenceOptions) {
   const wss = new WebSocketServer({ server, path: '/ws', maxPayload: WS_LIMITS.maxMessageBytes });
   const hub = new PresenceHub(WS_LIMITS.maxBufferedBytes);
   const connectionsByUser = new Map<string, number>();
-  const unsubscribe = events.subscribe((event) => hub.forward(event));
+  // Bumped on every access change, so a join can tell whether one happened during its own check.
+  let accessEpoch = 0;
+  const unsubscribe = events.subscribe((event) => {
+    if (event.type !== 'access.changed') return hub.forward(event);
+    accessEpoch += 1;
+    recheckAccess(event).catch((err: unknown) => {
+      logger.error({ err }, 'presence access recheck failed');
+    });
+  });
+
+  /**
+   * Re-runs the access check for everyone in the affected rooms: anyone who lost access is removed
+   * and told, and anyone downgraded to viewer stops showing as editing.
+   */
+  async function recheckAccess(change: AccessChanged): Promise<void> {
+    const roles = new Map<string, ReturnType<typeof noteRole>>();
+    for (const { noteId: id, socket, member } of hub.affectedBy(change)) {
+      const key = `${id}:${member.userId}`;
+      if (!roles.has(key)) roles.set(key, noteRole(db, id, member.userId));
+      const role = await roles.get(key);
+      if (!role) {
+        hub.leave(id, socket);
+        if (socket.readyState === socket.OPEN) {
+          socket.send(JSON.stringify({ type: 'access.revoked', noteId: id }));
+        }
+      } else if (role !== member.role) {
+        const mode = canEdit(role) ? member.mode : 'viewing';
+        hub.update(id, socket, { role, mode });
+      }
+    }
+  }
   const alive = new WeakSet<WebSocket>();
+
+  /**
+   * The caller's role, looked up again if access changed during the lookup: a revocation's recheck
+   * could otherwise run before this join lands and miss it. Gives up after three changes in a row.
+   */
+  async function currentRole(noteId: string, userId: string) {
+    let role: Awaited<ReturnType<typeof noteRole>>;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const epoch = accessEpoch;
+      role = await noteRole(db, noteId, userId);
+      if (epoch === accessEpoch) return role;
+    }
+    return undefined;
+  }
 
   wss.on('connection', (socket) => {
     let caller: Caller | undefined;
@@ -88,7 +132,7 @@ export function attachPresence(server: http.Server, options: PresenceOptions) {
         if (!alreadyIn && hub.roomCount(socket) >= WS_LIMITS.maxRoomsPerConnection) {
           return sendError('too_many_rooms', 'Leave a note before joining another');
         }
-        const role = await noteRole(db, message.noteId, who.userId);
+        const role = await currentRole(message.noteId, who.userId);
         if (!role) return sendError('not_found', 'Note not found');
         // The close handler may have run during the lookup; joining now would leave a ghost member.
         if (socket.readyState !== socket.OPEN) return;

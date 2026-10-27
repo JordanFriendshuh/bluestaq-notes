@@ -38,7 +38,9 @@ note_shares  id uuid pk, note_id -> notes on delete cascade,
 - **Shares use two nullable foreign keys, not a polymorphic `principal_id`**, so Postgres enforces
   referential integrity and deleting a user or team cleans up its grants.
 - **Effective role** = owner if `owner_id` matches, otherwise the highest role across the caller's direct
-  grant and the grants of every team they belong to. One SQL function/CTE computes it (`notes/access.ts`).
+  grant and the grants of every team they belong to. One query builder computes it
+  (`readableNotes` in `notes/access.ts`); the single-note check, the list and the WebSocket join all use it.
+  Access follows team membership live: leave a team and its grants stop applying at once.
 
 ## Auth
 - Email + password. Passwords are hashed with bcrypt (cost 12, configurable). They're limited to 72
@@ -54,7 +56,8 @@ note_shares  id uuid pk, note_id -> notes on delete cascade,
 - Unknown email and wrong password return the same 401 and take the same time (a dummy hash at the
   configured cost gets compared), so login can't be used to find out which emails have accounts.
   Registration does reveal it (409 `email_taken`). That's the usual tradeoff for a clear signup error;
-  the rate limit caps how fast anyone can probe it.
+  the rate limit caps how fast anyone can probe it. Adding a team member or sharing by email reveals it
+  the same way (404 `user_not_found`) to signed-in users; those routes aren't rate-limited yet.
 - Emails are `citext`: unique and matched without regard to case.
 - Not built (README "more time" list): refresh tokens and revocation, per-account lockout, a shared
   rate-limit store (Redis) for multiple instances, email verification.
@@ -92,7 +95,12 @@ note_shares  id uuid pk, note_id -> notes on delete cascade,
 | Read note                   | ✓     | ✓      | ✓      |
 | Edit title, body, items     | ✓     | ✓      |        |
 | Delete note                 | ✓     |        |        |
-| Add or remove shares        | ✓     |        |        |
+| See, add or remove shares   | ✓     |        |        |
+
+Sharing rules: a grant goes to one user (by email) or one team, as `viewer` or `editor`. Sharing the
+same grantee again changes the role. The owner can only grant teams they belong to, so nobody can push
+notes into a stranger's team, and can't grant themselves. `GET /notes?scope=owned|shared` splits the
+list; every note in it carries the caller's `role`.
 
 Teams: anyone can create one and becomes its owner. Owners add existing users by email (as `member`
 or `owner`), remove anyone, and delete the team. Members can see the team and its member list, and can leave.
@@ -211,6 +219,7 @@ server -> { type: "note.deleted", noteId, by }
 server -> { type: "item.added", noteId, by, item, after }
 server -> { type: "item.updated", noteId, by, item, after? }   after only when the item moved
 server -> { type: "item.deleted", noteId, by, itemId }
+server -> { type: "access.revoked", noteId }             you were removed from the room
 server -> { type: "error", code, message }
 ```
 - **Auth is the first message, not the URL.** Browsers can't set headers on a WebSocket, and a token in
@@ -240,8 +249,16 @@ server -> { type: "error", code, message }
   before auth is left to the load balancer, as it is for the HTTP API.
 - **One process.** REST handlers publish to an in-process `NoteEvents` bus that the socket server
   forwards to rooms. More than one process would need Redis pub/sub behind the same bus; noted, not built.
-- **Not built:** re-checking access while connected (matters once sharing lands: an unshare should
-  drop the viewer from the room) and throttling cursor broadcasts beyond the message rate limit.
+- **Access is re-checked live.** Changing or removing a share, removing a team member, or deleting a
+  team publishes `access.changed`. The socket server re-runs the access check for the affected rooms:
+  anyone who lost access gets `access.revoked` and is removed, and anyone downgraded to viewer stops
+  showing as editing.
+  - The re-check is scoped: a share change re-checks that note's room; a team change re-checks only
+    the users who left (or were on the deleted team). Since anyone can create a team, re-checking every
+    room on each team change would let one user make the server re-query everyone's access.
+  - A join whose access lookup overlapped an access change looks again before entering the room, so a
+    revocation can't slip in between the lookup and the join.
+- **Not built:** throttling cursor broadcasts beyond the message rate limit.
 - **Limit:** cursors are relayed live, but text syncs only through REST saves, so a remote cursor can
   drift until the next save. Character-level co-editing needs OT or a CRDT (Yjs), which is out of scope.
 - No frontend ships. The tests drive this with real WebSocket clients against a real server.
