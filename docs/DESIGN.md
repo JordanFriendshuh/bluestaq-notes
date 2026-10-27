@@ -185,6 +185,33 @@ highlighted snippet.
 It all runs inside Postgres: no extra service to run or keep in sync. Search by meaning comes from
 AI clients over MCP (below), not from a model inside the service.
 
+## Query performance
+`npm run perf:explain` builds a throwaway `notes_perf` database at realistic volume (1,000 users,
+200 teams, 50,000 notes, ~270,000 checklist items, ~60,000 shares), runs the real service functions as
+a busy user (owns 300 notes, on 3 teams, ~1,000 readable notes), and prints `EXPLAIN ANALYZE` for every
+query they send. Writes are explained inside a rolled-back transaction.
+
+| Request | Before | After |
+|---|---:|---:|
+| `GET /notes` (first page) | 224 ms | 3.3 ms |
+| Search, common word | 498 ms | 23 ms |
+| Search, no match | 335 ms | 11 ms |
+| `GET /notes/:id`, WebSocket join, `PATCH` | 0.1 ms | 0.1 ms |
+| Checklist add / move | 0.2 ms | 0.2 ms |
+
+- **Access as a union of index lookups.** "Owner, or any grant to me or my teams" as `OR EXISTS (...)`
+  can't use an index, so every list scanned all notes. `readableNotes` now joins a grouped union of
+  three indexed lookups (owned, shared with me, shared with my teams). For a single note, Postgres
+  pushes the `notes.id` filter into all three branches, so one definition serves both cases.
+- **No JIT, no parallel workers.** The pool sets `jit=off` and `max_parallel_workers_per_gather=0` per
+  session. With the old query JIT compilation was 200 of 224 ms; after the rewrite, starting two
+  parallel workers was 16 of 20 ms. Every query in this service is small, so neither ever pays off.
+- **Search is linear in readable notes:** each candidate's tsvector, checklist items and title
+  similarity are checked, about 15 µs per note. That's fine at team scale. Past ~10,000 readable
+  notes per user, it should be driven from the GIN indexes instead, which this plan doesn't use.
+- **Not changed:** `OFFSET` paging still sorts every readable note (keyset paging is the fix at larger
+  scale), and typo matching uses `word_similarity()`, which no index serves.
+
 ## MCP
 `POST /mcp` exposes the API to AI clients (Claude, Claude Code, Cursor) over the Model Context
 Protocol, using the official SDK (`@modelcontextprotocol/sdk`) and its Streamable HTTP transport.

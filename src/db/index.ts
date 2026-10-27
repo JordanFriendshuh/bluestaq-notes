@@ -18,6 +18,10 @@ export function createDb(pool: pg.Pool): Db {
   });
 }
 
+// Every query here is small and index-driven. JIT compilation and parallel workers cost more to start
+// than these queries take (measured: 20 ms -> 4 ms for the notes list), so both are off per session.
+const SESSION_OPTIONS = '-c jit=off -c max_parallel_workers_per_gather=0';
+
 /** Opens a pool that, unless TLS is off, verifies the server certificate and hostname. */
 export function createPool(connectionString: string, tls: DbTls): pg.Pool {
   const ssl =
@@ -27,5 +31,5 @@ export function createPool(connectionString: string, tls: DbTls): pg.Pool {
           rejectUnauthorized: true,
           ...(tls.caFile && { ca: readFileSync(tls.caFile, 'utf8') }),
         };
-  return new pg.Pool({ connectionString, ssl });
+  return new pg.Pool({ connectionString, ssl, options: SESSION_OPTIONS });
 }
