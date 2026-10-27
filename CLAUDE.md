@@ -54,8 +54,8 @@ Routes parse input and shape output. Services hold the logic and the SQL. Routes
   the caller can read the note but lacks the role for this action.
 - Note updates require `If-Match: <version>` (428 if missing, 409 on mismatch).
 - Passwords and tokens never appear in logs or responses.
-- One-line user text uses `singleLineText()` from `src/http/text.ts`. Never use a bare `z.string()` for
-  something a person types in.
+- One-line user text uses `singleLineText()` and multi-line text uses `multiLineText()`, both from
+  `src/http/text.ts`. Never use a bare `z.string()` for something a person types in.
 - Every security fix ships with a test in `test/security/` that fails on the old code.
 
 ## Workflow
