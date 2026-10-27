@@ -14,18 +14,27 @@ server-side semantic search (embeddings).
 users        id uuid pk, email citext unique, display_name, password_hash, created_at
 teams        id uuid pk, name, created_by -> users, created_at
 team_members team_id -> teams, user_id -> users, role ('owner'|'member'), pk(team_id, user_id)
-notes        id uuid pk, owner_id -> users, title, body, items jsonb default '[]',
+notes        id uuid pk, owner_id -> users, title, body,
              version int default 1, created_at, updated_at,
-             search tsvector generated (title weight A, body B, item text C)
+             search tsvector generated (title weight A, body B)
+note_items   id uuid pk, note_id -> notes on delete cascade, text, done bool,
+             position text collate "C", version int default 1, created_at, updated_at,
+             unique (note_id, position)
 note_shares  id uuid pk, note_id -> notes on delete cascade,
              user_id -> users null, team_id -> teams null,
              role ('viewer'|'editor'), created_at,
              check (exactly one of user_id, team_id), unique per (note, user) and (note, team)
 ```
-- **Checklists live inside the note** as `items: [{ id, text, done }]`. A note can be prose, a list, or both.
-  `PATCH` with `items` replaces the whole list; leaving `items` out keeps it. Items without an `id` get a
-  server-generated UUID, so clients can track them. Ids must be unique within the note; up to 500 items
-  of one-line text, 1–500 characters each.
+- **Checklist items are rows, each with its own URL.** A note can be prose, a list, or both. Every note
+  response embeds its items in order as `items: [{ id, text, done }]`. Items change one at a time
+  through `/notes/:id/items/:itemId`, so two people ticking different items never collide. Replacing
+  the whole list on every change would make every concurrent edit a conflict. Up to 500 items per note,
+  one-line text of 1–500 characters.
+- **Order uses fractional indexing** (`fractional-indexing`). Each item's `position` is a key that sorts
+  between its neighbors, so adding or moving an item writes only that row. Clients never see keys; they
+  send `after: <itemId>` (null for the top, omitted for the bottom). Keys sort by byte, hence `COLLATE "C"`.
+- **Item writes lock the note row** (the `updated_at` bump does it), so two inserts at the same spot
+  can't pick the same key. The lock is per note and held for one short transaction.
 - **Shares use two nullable foreign keys, not a polymorphic `principal_id`**, so Postgres enforces
   referential integrity and deleting a user or team cleans up its grants.
 - **Effective role** = owner if `owner_id` matches, otherwise the highest role across the caller's direct
@@ -105,11 +114,15 @@ POST   /teams                   GET /teams          GET /teams/:id      DELETE /
 POST   /teams/:id/members       { email, role }
 DELETE /teams/:id/members/:userId
 
-POST   /notes                   { title, body?, items? }
+POST   /notes                   { title, body?, items?: [{ text, done? }] }
 GET    /notes                   ?q=&scope=all|owned|shared&limit=&offset=
 GET    /notes/:id               -> ETag: "<version>"
-PATCH  /notes/:id               If-Match required; partial { title?, body?, items? }
+PATCH  /notes/:id               If-Match required; partial { title?, body? }
 DELETE /notes/:id
+
+POST   /notes/:id/items         { text, done?, after? }
+PATCH  /notes/:id/items/:itemId If-Match required; partial { text?, done?, after? }
+DELETE /notes/:id/items/:itemId
 
 GET    /notes/:id/shares
 PUT    /notes/:id/shares        { userEmail | teamId, role }  (upsert)
@@ -121,16 +134,19 @@ WS     /ws                      presence, see below
 ```
 Errors: `{ "error": { "code", "message", "details"? } }`. `details` is only on validation errors:
 one `{ path, message }` per invalid field (for example `path: "items.0.text"`). 400 validation, 401 no/invalid token, 403 role too low,
-404 not found or not visible, 409 version conflict, 428 missing If-Match.
+404 not found or not visible, 409 version conflict or full checklist, 428 missing If-Match.
 
 ## Concurrency
 Every note has a `version`. `GET` returns it as an ETag. `PATCH` must send `If-Match`. The update is
 `UPDATE ... WHERE id = $1 AND version = $2`, which bumps the version. Zero rows updated means 409, and
 the response includes the current note so the client can merge. Two editors can't silently overwrite each other.
 
+The note's version covers its title and body only. Each checklist item has its own version and
+`If-Match`, so ticking an item never invalidates someone's pending edit to the note text.
+
 ## Search
 One search box, no tags: fast, ranked, typo-tolerant search on every keystroke (`GET /notes?q=`).
-It searches title, body and checklist text, only returns notes the caller can read (same access CTE
+It searches title, body and checklist item text (a join on `note_items` with its own index), only returns notes the caller can read (same access CTE
 in the same query), and each result comes with a highlighted snippet.
 
 - **Full-text:** the generated `search` tsvector with a GIN index, so stemming works ("meeting"
@@ -153,7 +169,10 @@ list_teams      {}                                   -> teams the caller belongs
 search_notes    { q?, scope?, limit? }               -> same results as GET /notes
 get_note        { noteId }                           -> note with its version
 create_note     { title, body?, items? }
-update_note     { noteId, version, title?, body?, items? }
+update_note     { noteId, version, title?, body? }
+add_item        { noteId, text, after? }
+update_item     { noteId, itemId, version, text?, done?, after? }
+delete_item     { noteId, itemId }
 share_note      { noteId, userEmail | teamId, role }
 ```
 - **Tools are thin wrappers over the same services as REST.** Input goes through the same zod
