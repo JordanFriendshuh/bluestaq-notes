@@ -9,8 +9,26 @@ export interface UsersTable {
   createdAt: Generated<Date>;
 }
 
+export type TeamRole = 'owner' | 'member';
+
+export interface TeamsTable {
+  id: Generated<string>;
+  name: string;
+  createdBy: string | null;
+  createdAt: Generated<Date>;
+}
+
+export interface TeamMembersTable {
+  teamId: string;
+  userId: string;
+  role: TeamRole;
+  createdAt: Generated<Date>;
+}
+
 export interface Database {
   users: UsersTable;
+  teams: TeamsTable;
+  teamMembers: TeamMembersTable;
 }
 
 export type UserRow = Selectable<UsersTable>;
