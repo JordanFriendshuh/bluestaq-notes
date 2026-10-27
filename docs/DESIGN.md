@@ -226,11 +226,22 @@ server -> { type: "error", code, message }
   the connection stays open. Messages are capped at 16 KB.
 - **Heartbeat:** the server pings every 15 seconds and drops a connection that missed the last ping,
   which also removes it from presence.
+- **Abuse limits** (`src/presence/limits.ts`), each closing or refusing before one client can hurt the
+  process or other users:
+  - Messages over 16 KB close the connection (1009). Socket errors are always handled, because an
+    unhandled one exits the Node process.
+  - 30 messages a second and 20 waiting on the database per connection (1008 past either).
+  - 50 rooms per connection (`too_many_rooms`) and 20 open connections per user (4429).
+  - A client more than 1 MB behind on reading is dropped instead of buffered without limit.
+  - The connection closes (4401) when its token expires.
+  - A client that disconnects mid-join is never added to the room afterwards.
+- **No Origin check, on purpose:** cross-site WebSocket hijacking rides on cookies, and this socket only
+  trusts a token sent in a message, which another site's page doesn't have. Capping connections per IP
+  before auth is left to the load balancer, as it is for the HTTP API.
 - **One process.** REST handlers publish to an in-process `NoteEvents` bus that the socket server
   forwards to rooms. More than one process would need Redis pub/sub behind the same bus; noted, not built.
 - **Not built:** re-checking access while connected (matters once sharing lands: an unshare should
-  drop the viewer from the room), closing connections when the token expires, per-connection rate
-  limits, and throttling cursor broadcasts.
+  drop the viewer from the room) and throttling cursor broadcasts beyond the message rate limit.
 - **Limit:** cursors are relayed live, but text syncs only through REST saves, so a remote cursor can
   drift until the next save. Character-level co-editing needs OT or a CRDT (Yjs), which is out of scope.
 - No frontend ships. The tests drive this with real WebSocket clients against a real server.
