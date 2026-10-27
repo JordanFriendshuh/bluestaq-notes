@@ -1,6 +1,6 @@
 import { sql } from 'kysely';
 import type { Db } from '../db/index.js';
-import type { NoteRow } from '../db/types.js';
+import type { ChecklistItem, NoteRow } from '../db/types.js';
 import { HttpError, notFound } from '../http/errors.js';
 import { noteRole, readableNotes, type NoteRole } from './access.js';
 import type { CreateNoteInput, ListNotesInput, UpdateNoteInput } from './schemas.js';
@@ -10,6 +10,7 @@ export interface Note {
   ownerId: string;
   title: string;
   body: string;
+  items: ChecklistItem[];
   role: NoteRole;
   createdAt: Date;
   updatedAt: Date;
@@ -28,7 +29,12 @@ async function requireRole(db: Db, noteId: string, userId: string): Promise<Note
 export async function createNote(db: Db, userId: string, input: CreateNoteInput): Promise<Note> {
   const row = await db
     .insertInto('notes')
-    .values({ ownerId: userId, title: input.title, body: input.body })
+    .values({
+      ownerId: userId,
+      title: input.title,
+      body: input.body,
+      items: JSON.stringify(input.items),
+    })
     .returningAll()
     .executeTakeFirstOrThrow();
   return toNote(row, 'owner');
@@ -56,7 +62,7 @@ export async function getNote(db: Db, userId: string, noteId: string): Promise<N
   return toNote(row, role);
 }
 
-/** Changes only the fields sent; needs the editor role. */
+/** Changes only the fields sent, replacing the checklist whole if sent; needs the editor role. */
 export async function updateNote(
   db: Db,
   userId: string,
@@ -67,9 +73,14 @@ export async function updateNote(
   if (!canEdit(role))
     throw new HttpError(403, 'forbidden', 'You can view this note but not edit it');
 
+  const { items, ...text } = input;
   const row = await db
     .updateTable('notes')
-    .set({ ...input, updatedAt: sql`now()` })
+    .set({
+      ...text,
+      ...(items && { items: JSON.stringify(items) }),
+      updatedAt: sql`now()`,
+    })
     .where('id', '=', noteId)
     .returningAll()
     .executeTakeFirst();
