@@ -56,7 +56,8 @@ note_shares  id uuid pk, note_id -> notes on delete cascade,
 - Unknown email and wrong password return the same 401 and take the same time (a dummy hash at the
   configured cost gets compared), so login can't be used to find out which emails have accounts.
   Registration does reveal it (409 `email_taken`). That's the usual tradeoff for a clear signup error;
-  the rate limit caps how fast anyone can probe it.
+  the rate limit caps how fast anyone can probe it. Adding a team member or sharing by email reveals it
+  the same way (404 `user_not_found`) to signed-in users; those routes aren't rate-limited yet.
 - Emails are `citext`: unique and matched without regard to case.
 - Not built (README "more time" list): refresh tokens and revocation, per-account lockout, a shared
   rate-limit store (Redis) for multiple instances, email verification.
@@ -252,6 +253,11 @@ server -> { type: "error", code, message }
   team publishes `access.changed`. The socket server re-runs the access check for the affected rooms:
   anyone who lost access gets `access.revoked` and is removed, and anyone downgraded to viewer stops
   showing as editing.
+  - The re-check is scoped: a share change re-checks that note's room; a team change re-checks only
+    the users who left (or were on the deleted team). Since anyone can create a team, re-checking every
+    room on each team change would let one user make the server re-query everyone's access.
+  - A join whose access lookup overlapped an access change looks again before entering the room, so a
+    revocation can't slip in between the lookup and the join.
 - **Not built:** throttling cursor broadcasts beyond the message rate limit.
 - **Limit:** cursors are relayed live, but text syncs only through REST saves, so a remote cursor can
   drift until the next save. Character-level co-editing needs OT or a CRDT (Yjs), which is out of scope.
