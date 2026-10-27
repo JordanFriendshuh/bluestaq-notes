@@ -13,8 +13,12 @@ const as = (user: TestUser) => ({
   get: (path: string) => request(app).get(path).set('Authorization', `Bearer ${user.token}`),
   post: (path: string, body: object) =>
     request(app).post(path).set('Authorization', `Bearer ${user.token}`).send(body),
-  patch: (path: string, body: object) =>
-    request(app).patch(path).set('Authorization', `Bearer ${user.token}`).send(body),
+  patch: (path: string, body: object, version = 1) =>
+    request(app)
+      .patch(path)
+      .set('Authorization', `Bearer ${user.token}`)
+      .set('If-Match', `"${version}"`)
+      .send(body),
   delete: (path: string) => request(app).delete(path).set('Authorization', `Bearer ${user.token}`),
 });
 

@@ -12,14 +12,19 @@ interface Item {
   id: string;
   text: string;
   done: boolean;
+  version: number;
 }
 
 const as = (user: TestUser) => ({
   get: (path: string) => request(app).get(path).set('Authorization', `Bearer ${user.token}`),
   post: (path: string, body: object) =>
     request(app).post(path).set('Authorization', `Bearer ${user.token}`).send(body),
-  patch: (path: string, body: object) =>
-    request(app).patch(path).set('Authorization', `Bearer ${user.token}`).send(body),
+  patch: (path: string, body: object, version = 1) =>
+    request(app)
+      .patch(path)
+      .set('Authorization', `Bearer ${user.token}`)
+      .set('If-Match', `"${version}"`)
+      .send(body),
   delete: (path: string) => request(app).delete(path).set('Authorization', `Bearer ${user.token}`),
 });
 
@@ -56,8 +61,8 @@ describe('items on notes', () => {
 
     expect(res.status).toBe(201);
     expect(res.body.note.items).toEqual([
-      { id: expect.any(String), text: 'milk', done: false },
-      { id: expect.any(String), text: 'eggs', done: true },
+      { id: expect.any(String), text: 'milk', done: false, version: 1 },
+      { id: expect.any(String), text: 'eggs', done: true, version: 1 },
     ]);
   });
 
@@ -99,7 +104,12 @@ describe('POST /notes/:id/items', () => {
     const res = await as(owner).post(`/notes/${noteId}/items`, { text: 'eggs' });
 
     expect(res.status).toBe(201);
-    expect(res.body.item).toEqual({ id: expect.any(String), text: 'eggs', done: false });
+    expect(res.body.item).toEqual({
+      id: expect.any(String),
+      text: 'eggs',
+      done: false,
+      version: 1,
+    });
     expect(await textsOf(noteId)).toEqual(['milk', 'eggs']);
   });
 
@@ -179,7 +189,7 @@ describe('PATCH /notes/:id/items/:itemId', () => {
     });
 
     expect(res.status).toBe(200);
-    expect(res.body.item).toEqual({ id: items[0]!.id, text: 'oat milk', done: true });
+    expect(res.body.item).toEqual({ id: items[0]!.id, text: 'oat milk', done: true, version: 2 });
     expect((await as(owner).get(`/notes/${noteId}`)).body.note.items[1]).toEqual(items[1]);
   });
 
