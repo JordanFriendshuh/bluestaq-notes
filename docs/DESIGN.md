@@ -137,12 +137,17 @@ one `{ path, message }` per invalid field (for example `path: "items.0.text"`). 
 404 not found or not visible, 409 version conflict or full checklist, 428 missing If-Match.
 
 ## Concurrency
-Every note has a `version`. `GET` returns it as an ETag. `PATCH` must send `If-Match`. The update is
-`UPDATE ... WHERE id = $1 AND version = $2`, which bumps the version. Zero rows updated means 409, and
-the response includes the current note so the client can merge. Two editors can't silently overwrite each other.
+Every note has a `version`. Responses carry it in the body and as an ETag (`"3"`). `PATCH` must send
+`If-Match` with the version the client last read (428 `precondition_required` without it; 400
+`invalid_if_match` for anything but `"3"` or a bare `3`). The update is
+`UPDATE ... WHERE id = $1 AND version = $2`, which bumps the version in the same statement, so of two
+simultaneous saves exactly one wins. The loser gets 409 `version_conflict` with the current copy in
+`error.current`, so the client can merge and retry. Two editors can't silently overwrite each other.
 
 The note's version covers its title and body only. Each checklist item has its own version and
-`If-Match`, so ticking an item never invalidates someone's pending edit to the note text.
+`If-Match`, so ticking an item never invalidates someone's pending edit to the note text. Item updates
+check the version inside the note lock, which makes the check and the write atomic. Deletes and new
+items don't take `If-Match`: deleting is deliberate, and a new item can't conflict with anything.
 
 ## Search
 One search box, no tags: fast, ranked, typo-tolerant search on every keystroke (`GET /notes?q=`).
