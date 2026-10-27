@@ -20,6 +20,9 @@ export interface Member {
 export class PresenceHub {
   private readonly rooms = new Map<string, Map<WebSocket, Member>>();
 
+  /** `maxBufferedBytes`: a client this far behind on reading is dropped instead of buffered forever. */
+  constructor(private readonly maxBufferedBytes: number) {}
+
   join(noteId: string, socket: WebSocket, member: Member): void {
     let room = this.rooms.get(noteId);
     if (!room) {
@@ -39,6 +42,12 @@ export class PresenceHub {
 
   leaveAll(socket: WebSocket): void {
     for (const noteId of [...this.rooms.keys()]) this.leave(noteId, socket);
+  }
+
+  roomCount(socket: WebSocket): number {
+    let count = 0;
+    for (const room of this.rooms.values()) if (room.has(socket)) count += 1;
+    return count;
   }
 
   member(noteId: string, socket: WebSocket): Member | undefined {
@@ -76,7 +85,9 @@ export class PresenceHub {
     if (!room) return;
     const data = JSON.stringify(message);
     for (const socket of room.keys()) {
-      if (socket.readyState === socket.OPEN) socket.send(data);
+      if (socket.readyState !== socket.OPEN) continue;
+      if (socket.bufferedAmount > this.maxBufferedBytes) socket.terminate();
+      else socket.send(data);
     }
   }
 }
