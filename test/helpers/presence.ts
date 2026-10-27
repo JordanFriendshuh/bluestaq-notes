@@ -27,6 +27,7 @@ export async function startPresenceServer(
   return {
     ...ctx,
     url: `ws://127.0.0.1:${port}/ws`,
+    httpUrl: `http://127.0.0.1:${port}`,
     async close() {
       await presence.close();
       await new Promise((resolve) => server.close(resolve));
