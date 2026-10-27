@@ -20,11 +20,9 @@ export type NoteEvent =
     }
   | { type: 'item.deleted'; noteId: string; by: string; itemId: string };
 
-/** Someone may have lost or changed access: one note's grants, or (no noteId) a team's membership. */
-export interface AccessChanged {
-  type: 'access.changed';
-  noteId?: string;
-}
+/** Someone may have lost or changed access: everyone on one note, or the given users on every note. */
+export type AccessChanged =
+  { type: 'access.changed'; noteId: string } | { type: 'access.changed'; userIds: string[] };
 
 /** In-process fan-out of note changes; more than one process would need Redis pub/sub here. */
 export class NoteEvents {

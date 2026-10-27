@@ -32,8 +32,8 @@ export function teamRoutes(db: Db, settings: TokenSettings, events: NoteEvents):
 
   router.delete('/teams/:id', async (req, res) => {
     const { id } = parse(teamParamsSchema, req.params);
-    await deleteTeam(db, callerId(req), id);
-    events.publish({ type: 'access.changed' });
+    const formerMembers = await deleteTeam(db, callerId(req), id);
+    events.publish({ type: 'access.changed', userIds: formerMembers });
     res.status(204).end();
   });
 
@@ -46,7 +46,7 @@ export function teamRoutes(db: Db, settings: TokenSettings, events: NoteEvents):
   router.delete('/teams/:id/members/:userId', async (req, res) => {
     const { id, userId } = parse(memberParamsSchema, req.params);
     await removeMember(db, callerId(req), id, userId);
-    events.publish({ type: 'access.changed' });
+    events.publish({ type: 'access.changed', userIds: [userId] });
     res.status(204).end();
   });
 

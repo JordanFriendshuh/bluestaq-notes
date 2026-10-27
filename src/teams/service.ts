@@ -99,10 +99,18 @@ async function listMembers(db: Db, teamId: string): Promise<TeamMember[]> {
     .execute();
 }
 
-/** Deletes the team and its memberships; owners only. */
-export async function deleteTeam(db: Db, callerId: string, teamId: string): Promise<void> {
+/** Deletes the team and its memberships; owners only. Returns the former members, who may have lost access. */
+export async function deleteTeam(db: Db, callerId: string, teamId: string): Promise<string[]> {
   if ((await requireMember(db, teamId, callerId)) !== 'owner') throw ownerOnly();
-  await db.deleteFrom('teams').where('id', '=', teamId).execute();
+  return db.transaction().execute(async (trx) => {
+    const members = await trx
+      .selectFrom('teamMembers')
+      .select('userId')
+      .where('teamId', '=', teamId)
+      .execute();
+    await trx.deleteFrom('teams').where('id', '=', teamId).execute();
+    return members.map((member) => member.userId);
+  });
 }
 
 /** Adds an existing user to the team by email; owners only. */

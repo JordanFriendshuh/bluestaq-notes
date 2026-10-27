@@ -1,5 +1,5 @@
 import type { WebSocket } from 'ws';
-import type { NoteEvent } from '../events.js';
+import type { AccessChanged, NoteEvent } from '../events.js';
 import type { NoteRole } from '../notes/access.js';
 
 export interface Cursor {
@@ -57,6 +57,13 @@ export class PresenceHub {
     return rooms.flatMap(([id, room]) =>
       [...(room ?? [])].map(([socket, member]) => ({ noteId: id, socket, member })),
     );
+  }
+
+  /** The memberships an access change could affect: one note's room, or the named users anywhere. */
+  affectedBy(change: AccessChanged): { noteId: string; socket: WebSocket; member: Member }[] {
+    if ('noteId' in change) return this.memberships(change.noteId);
+    const users = new Set(change.userIds);
+    return this.memberships().filter(({ member }) => users.has(member.userId));
   }
 
   member(noteId: string, socket: WebSocket): Member | undefined {
