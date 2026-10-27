@@ -2,11 +2,12 @@
 
 ## Scope
 **In:** accounts and auth, teams, notes with optional checklists, sharing notes with users or teams
-as viewer or editor, search-as-you-type, AI (semantic) search with a local embedding model,
+as viewer or editor, search-as-you-type, an MCP endpoint so AI clients can use the same features,
 optimistic concurrency, live presence and cursors.
 
 **Out (README "more time" list):** attachments (S3 + presigned URLs), real-time co-editing of content
-(CRDT/Yjs), organizations/tenancy, refresh tokens, notebooks as a shared unit.
+(CRDT/Yjs), organizations/tenancy, refresh tokens, notebooks as a shared unit, OAuth for MCP clients,
+server-side semantic search (embeddings).
 
 ## Data model (PostgreSQL)
 ```
@@ -20,8 +21,6 @@ note_shares  id uuid pk, note_id -> notes on delete cascade,
              user_id -> users null, team_id -> teams null,
              role ('viewer'|'editor'), created_at,
              check (exactly one of user_id, team_id), unique per (note, user) and (note, team)
-note_embeddings  note_id pk -> notes on delete cascade, model, content_hash,
-                 embedding vector(384), updated_at
 ```
 - **Checklists live inside the note** as `items: [{ id, text, done }]`. A note can be prose, a list, or both.
 - **Shares use two nullable foreign keys, not a polymorphic `principal_id`**, so Postgres enforces
@@ -59,8 +58,8 @@ note_embeddings  note_id pk -> notes on delete cascade, model, content_hash,
 - **At rest: we recommend disk or volume encryption for the deployed database** (managed-database
   encryption, encrypted EBS, or LUKS). It covers data files, WAL and backups with no code changes.
   Managed services (RDS, MongoDB Atlas) do the same.
-- **Why not column-level encryption:** Postgres can't run full-text search, trigram matching or
-  embeddings on ciphertext, so encrypting note content in the database would disable search. Fields
+- **Why not column-level encryption:** Postgres can't run full-text search or trigram matching on
+  ciphertext, so encrypting note content in the database would disable search. Fields
   that never need to be searched could be encrypted in the app with KMS-managed keys if a future
   requirement calls for it.
 - **Passwords** are bcrypt hashes. They're never stored or logged, and can't be reversed.
@@ -97,7 +96,6 @@ DELETE /teams/:id/members/:userId
 
 POST   /notes                   { title, body?, items? }
 GET    /notes                   ?q=&scope=all|owned|shared&limit=&offset=
-GET    /notes/search/ai         ?q=&limit=   (503 ai_search_disabled when AI_SEARCH=off)
 GET    /notes/:id               -> ETag: "<version>"
 PATCH  /notes/:id               If-Match required; partial { title?, body?, items? }
 DELETE /notes/:id
@@ -107,6 +105,7 @@ PUT    /notes/:id/shares        { userEmail | teamId, role }  (upsert)
 DELETE /notes/:id/shares/:shareId
 
 GET    /health
+POST   /mcp                     MCP (Streamable HTTP), see below
 WS     /ws                      presence, see below
 ```
 Errors: `{ "error": { "code", "message", "details"? } }`. `details` is only on validation errors:
@@ -119,16 +118,9 @@ Every note has a `version`. `GET` returns it as an ETag. `PATCH` must send `If-M
 the response includes the current note so the client can merge. Two editors can't silently overwrite each other.
 
 ## Search
-Two steps from one search box. No tags.
-
-1. **As you type:** fast, ranked, typo-tolerant search on every keystroke (`GET /notes?q=`).
-2. **AI search:** if the user doesn't find the note, they ask for AI search (`GET /notes/search/ai?q=`),
-   which matches by meaning, not wording. It runs on an embedding model inside the service.
-
-Both search title, body and checklist text, and both only return notes the caller can read (same
-access CTE in the same query). Each result comes with a highlighted snippet.
-
-### As you type
+One search box, no tags: fast, ranked, typo-tolerant search on every keystroke (`GET /notes?q=`).
+It searches title, body and checklist text, only returns notes the caller can read (same access CTE
+in the same query), and each result comes with a highlighted snippet.
 
 - **Full-text:** the generated `search` tsvector with a GIN index, so stemming works ("meeting"
   matches "meetings") and title hits rank above body hits. Each word of the query becomes a prefix
@@ -137,23 +129,34 @@ access CTE in the same query). Each result comes with a highlighted snippet.
 - **Ranking:** `ts_rank` plus title similarity. `ts_headline` produces the snippet.
 - With no `q`, results sort by `updated_at` desc.
 
-It all runs inside Postgres: no extra service to run or keep in sync.
+It all runs inside Postgres: no extra service to run or keep in sync. Search by meaning comes from
+AI clients over MCP (below), not from a model inside the service.
 
-### AI search
-- **A local embedding model, no API key.** `bge-small-en-v1.5` (384 dimensions, about 35 MB quantized)
-  runs in-process with `@huggingface/transformers` (ONNX on the CPU). Note text never leaves the server,
-  and the feature costs nothing.
-- **The model is baked into the Docker image** at build time, so the first search is fast and the
-  service runs offline. The tradeoff is a bigger image and some CPU used per save.
-- **Embedding with pgvector.** When a note is created or updated, its title, body and items are embedded
-  *after* the response is sent, so a save never waits on the model. `content_hash` skips the work when
-  the text hasn't changed. On startup, notes with no embedding or a stale one get backfilled.
-- **Query:** embed the query (with bge's query prefix), then a nearest-neighbor search (cosine distance)
-  over the caller's readable notes.
-- **The embedder sits behind a small interface** (`embed(texts) -> vectors`). Tests use a deterministic
-  fake, and a hosted provider could be swapped in with one file.
-- `AI_SEARCH=off` turns it off for low-resource deployments. The endpoint then returns 503 `ai_search_disabled`.
-- The Postgres image is `pgvector/pgvector:pg16`.
+## MCP
+`POST /mcp` exposes the API to AI clients (Claude, Claude Code, Cursor) over the Model Context
+Protocol, using the official SDK (`@modelcontextprotocol/sdk`) and its Streamable HTTP transport.
+The client reads the tool list, decides when to call a tool, and gets JSON back.
+
+```
+list_teams      {}                                   -> teams the caller belongs to
+search_notes    { q?, scope?, limit? }               -> same results as GET /notes
+get_note        { noteId }                           -> note with its version
+create_note     { title, body?, items? }
+update_note     { noteId, version, title?, body?, items? }
+share_note      { noteId, userEmail | teamId, role }
+```
+- **Tools are thin wrappers over the same services as REST.** Input goes through the same zod
+  schemas, and every note goes through `notes/access.ts`, so MCP can never see or do more than REST.
+- **Semantic search happens in the client.** The model turns a vague question into several keyword
+  searches with `search_notes` and reads the hits. No embeddings, no model in the service, no API key.
+- **Auth:** the same `Authorization: Bearer <jwt>` as REST (`claude mcp add --transport http notes
+  https://localhost:3000/mcp --header "Authorization: Bearer <jwt>"`). The MCP spec's answer for
+  remote servers is OAuth 2.1; that's on the "more time" list.
+- **Stateless:** each request builds its server from the caller's token, with no MCP sessions to keep.
+- **Errors** are tool results with `isError: true` and the same `code` and `message` as REST.
+  `update_note` needs `version`, so a stale write is a `version_conflict` with the current note.
+- Tests call each tool over HTTP and repeat the permission matrix for MCP (owner, editor, viewer,
+  team member, stranger).
 
 ## Presence and cursors
 A WebSocket at `/ws`. The client authenticates with the same JWT on connect, then joins notes.

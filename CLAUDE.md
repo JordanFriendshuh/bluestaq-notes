@@ -4,14 +4,14 @@ Backend for a note-taking service shared among several small teams. This is a ta
 challenge for Bluestaq: a runnable REST service, tests, and a README. Reviewers judge **clarity,
 correctness and tradeoffs**, so a smaller scope done well beats a wide one done thin.
 
-The design (data model, endpoints, search, presence) is in `docs/DESIGN.md`. Read it before you
+The design (data model, endpoints, search, MCP, presence) is in `docs/DESIGN.md`. Read it before you
 change behavior, and update it in the same PR when behavior changes.
 
 ## Stack
 - Node 22 (`.nvmrc`), TypeScript (strict), Express 5
-- PostgreSQL 16 with pg_trgm and pgvector, plain SQL migrations in `migrations/`, Kysely for typed queries
-- AI search uses a local embedding model (`@huggingface/transformers`, bge-small-en-v1.5) behind an
-  `Embedder` interface. Tests use the fake embedder. Never load the real model in unit tests.
+- PostgreSQL 16 with pg_trgm, plain SQL migrations in `migrations/`, Kysely for typed queries
+- MCP: `@modelcontextprotocol/sdk` on `POST /mcp` (Streamable HTTP, stateless). Tools wrap the services;
+  they never hold their own logic or SQL.
 - zod validates every request body, query and param at the route boundary
 - Auth: bcryptjs password hashes, JWT bearer tokens (jsonwebtoken)
 - Presence: `ws` WebSocket server on the same HTTP server
@@ -25,7 +25,7 @@ src/
   server.ts         starts HTTP + WebSocket
   config.ts         env parsing (zod), the only place that reads process.env
   db/               kysely instance, generated table types
-  auth/  teams/  notes/  shares/  search/  presence/
+  auth/  teams/  notes/  shares/  search/  mcp/  presence/
                     one folder per feature: routes.ts, service.ts, schemas.ts
   middleware/       auth, error handler, validation
 migrations/         numbered .sql files, forward only
@@ -46,6 +46,8 @@ Routes parse input and shape output. Services hold the logic and the SQL. Routes
 - No `any`. Database row types come from `src/db/types.ts`.
 
 ## Rules that hold everywhere
+- REST routes and MCP tools are two front doors to the same services. A feature added to one gets
+  added to the other in the same PR, with the same permission tests.
 - Every note query goes through the access check in `notes/access.ts`. Never hand-write
   "can this user see this note" logic anywhere else.
 - A note the caller can't read returns **404**, never 403, so its existence doesn't leak. 403 means
