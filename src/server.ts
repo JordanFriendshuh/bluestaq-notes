@@ -1,9 +1,11 @@
 import { createApp } from './app.js';
 import { loadConfig } from './config.js';
 import { createDb, createPool } from './db/index.js';
+import { NoteEvents } from './events.js';
 import { runMigrations } from './db/migrate.js';
 import { createServer } from './http/create-server.js';
 import { logger } from './logger.js';
+import { attachPresence } from './presence/socket.js';
 
 const config = loadConfig();
 const pool = createPool(config.DATABASE_URL, {
@@ -26,14 +28,18 @@ const tls =
     ? { certFile: config.TLS_CERT_FILE, keyFile: config.TLS_KEY_FILE }
     : undefined;
 
-const app = createApp({ db, auth, behindProxy: config.TLS_TERMINATED_UPSTREAM });
-const server = createServer(app, tls).listen(config.PORT, () => {
+const events = new NoteEvents();
+const app = createApp({ db, auth, events, behindProxy: config.TLS_TERMINATED_UPSTREAM });
+const server = createServer(app, tls);
+const presence = attachPresence(server, { db, auth, events });
+server.listen(config.PORT, () => {
   logger.info({ port: config.PORT, https: Boolean(tls) }, 'listening');
 });
 
-/** Stops taking connections, lets in-flight requests finish, then closes the pool. */
+/** Drops WebSockets, stops taking connections, lets in-flight requests finish, then closes the pool. */
 function shutdown(signal: string) {
   logger.info({ signal }, 'shutting down');
+  void presence.close();
   server.close(() => {
     void db.destroy().then(() => process.exit(0));
   });
