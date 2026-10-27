@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { callerId, requireAuth } from '../auth/middleware.js';
 import type { TokenSettings } from '../auth/tokens.js';
 import type { Db } from '../db/index.js';
+import type { NoteEvents } from '../events.js';
 import { expectedVersion, setVersionTag } from '../http/preconditions.js';
 import { parse } from '../http/validate.js';
 import {
@@ -12,7 +13,7 @@ import {
 } from './schemas.js';
 import { createNote, deleteNote, getNote, listNotes, updateNote } from './service.js';
 
-export function noteRoutes(db: Db, settings: TokenSettings): Router {
+export function noteRoutes(db: Db, settings: TokenSettings, events: NoteEvents): Router {
   const router = Router();
   router.use('/notes', requireAuth(settings));
 
@@ -39,6 +40,13 @@ export function noteRoutes(db: Db, settings: TokenSettings): Router {
     const { id } = parse(noteParamsSchema, req.params);
     const input = parse(updateNoteSchema, req.body);
     const note = await updateNote(db, callerId(req), id, expectedVersion(req), input);
+    const { title, body, version, updatedAt } = note;
+    events.publish({
+      type: 'note.updated',
+      noteId: id,
+      by: callerId(req),
+      note: { title, body, version, updatedAt },
+    });
     setVersionTag(res, note.version);
     res.json({ note });
   });
@@ -46,6 +54,7 @@ export function noteRoutes(db: Db, settings: TokenSettings): Router {
   router.delete('/notes/:id', async (req, res) => {
     const { id } = parse(noteParamsSchema, req.params);
     await deleteNote(db, callerId(req), id);
+    events.publish({ type: 'note.deleted', noteId: id, by: callerId(req) });
     res.status(204).end();
   });
 

@@ -11,6 +11,12 @@ import {
   type UpdateItemInput,
 } from './schemas.js';
 
+/** An item and the id of the item now just above it (null at the top). */
+export interface PlacedItem {
+  item: ChecklistItem;
+  after: string | null;
+}
+
 export interface ChecklistItem {
   id: string;
   text: string;
@@ -108,6 +114,19 @@ async function positionFor(
   return generateKeyBetween(previous, next?.position ?? null);
 }
 
+/** The id of the item just above `position`, or null if it's the top. */
+async function itemAbove(db: Db, noteId: string, position: string): Promise<string | null> {
+  const row = await db
+    .selectFrom('noteItems')
+    .select('id')
+    .where('noteId', '=', noteId)
+    .where('position', '<', position)
+    .orderBy('position', 'desc')
+    .limit(1)
+    .executeTakeFirst();
+  return row?.id ?? null;
+}
+
 const invalidPosition = (message: string) => new HttpError(400, 'invalid_position', message);
 
 export async function addItem(
@@ -115,7 +134,7 @@ export async function addItem(
   userId: string,
   noteId: string,
   input: AddItemInput,
-): Promise<ChecklistItem> {
+): Promise<PlacedItem> {
   return db.transaction().execute(async (trx) => {
     await lockNoteForEdit(trx, noteId, userId);
 
@@ -129,11 +148,12 @@ export async function addItem(
     }
 
     const position = await positionFor(trx, noteId, input.after);
-    return trx
+    const item = await trx
       .insertInto('noteItems')
       .values({ noteId, text: input.text, done: input.done, position })
       .returning(ITEM_COLUMNS)
       .executeTakeFirstOrThrow();
+    return { item, after: await itemAbove(trx, noteId, position) };
   });
 }
 
@@ -148,7 +168,7 @@ export async function updateItem(
   itemId: string,
   expectedVersion: number,
   input: UpdateItemInput,
-): Promise<ChecklistItem> {
+): Promise<{ item: ChecklistItem; after?: string | null }> {
   return db.transaction().execute(async (trx) => {
     await lockNoteForEdit(trx, noteId, userId);
     const current = await requireItem(trx, noteId, itemId);
@@ -157,7 +177,7 @@ export async function updateItem(
     const { after, ...fields } = input;
     const position =
       after === undefined ? undefined : await positionFor(trx, noteId, after, itemId);
-    return trx
+    const item = await trx
       .updateTable('noteItems')
       .set({
         ...fields,
@@ -168,6 +188,7 @@ export async function updateItem(
       .where('id', '=', itemId)
       .returning(ITEM_COLUMNS)
       .executeTakeFirstOrThrow();
+    return position ? { item, after: await itemAbove(trx, noteId, position) } : { item };
   });
 }
 

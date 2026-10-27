@@ -130,7 +130,7 @@ DELETE /notes/:id/shares/:shareId
 
 GET    /health
 POST   /mcp                     MCP (Streamable HTTP), see below
-WS     /ws                      presence, see below
+WS     /ws                      presence and live changes, see below
 ```
 Errors: `{ "error": { "code", "message", "details"? } }`. `details` is only on validation errors:
 one `{ path, message }` per invalid field (for example `path: "items.0.text"`). 400 validation, 401 no/invalid token, 403 role too low,
@@ -193,21 +193,55 @@ share_note      { noteId, userEmail | teamId, role }
 - Tests call each tool over HTTP and repeat the permission matrix for MCP (owner, editor, viewer,
   team member, stranger).
 
-## Presence and cursors
-A WebSocket at `/ws`. The client authenticates with the same JWT on connect, then joins notes.
+## Presence and live changes
+A WebSocket at `/ws`, on the same server and port as the API (so `wss://` under TLS). Clients join a
+note's room to see who else is there and to get every change made through REST pushed to them.
+
 ```
-client -> { type: "join",   noteId }
-client -> { type: "leave",  noteId }
+client -> { type: "auth", token }                       must be the first message
+client -> { type: "join", noteId }                      needs read access
+client -> { type: "leave", noteId }
+client -> { type: "activity", noteId, mode: "viewing"|"editing" }   editing needs the editor role
 client -> { type: "cursor", noteId, field: "title"|"body"|"item:<id>", anchor, head }
-client -> { type: "activity", noteId, mode: "viewing"|"editing" }
+
+server -> { type: "ready", userId }
 server -> { type: "presence", noteId, users: [{ userId, displayName, mode, cursor? }] }
-server -> { type: "note.updated", noteId, version, updatedBy }
+server -> { type: "note.updated", noteId, by, note: { title, body, version, updatedAt } }
+server -> { type: "note.deleted", noteId, by }
+server -> { type: "item.added", noteId, by, item, after }
+server -> { type: "item.updated", noteId, by, item, after? }   after only when the item moved
+server -> { type: "item.deleted", noteId, by, itemId }
 server -> { type: "error", code, message }
 ```
-- `join` requires read access, and `mode: "editing"` requires the editor role (same access check as REST).
-- Presence is in memory, per process. A connection that sends nothing for 30s gets dropped
-  (ping/pong). Running more than one process would need Redis pub/sub; noted, not built.
-- When a REST `PATCH` succeeds, the server sends `note.updated` to everyone in that note's room, so viewers know to refetch.
-- **Limit:** cursors are relayed live, but content syncs only through REST saves. A remote cursor can
-  drift until the next save. Real Google-Docs co-editing needs a CRDT (Yjs), which is out of scope.
-- No frontend ships. The tests drive this with two WebSocket clients, plus a small demo script in `scripts/`.
+- **Auth is the first message, not the URL.** Browsers can't set headers on a WebSocket, and a token in
+  the query string ends up in proxy and access logs. No auth within 5 seconds, a bad token, or any
+  other message first closes the connection with code 4401. Messages on a connection are handled one
+  at a time, in order, so a `join` sent right behind `auth` works.
+- **Changes carry the new content**, so viewers update without refetching. `after` is the id of the
+  item now above it (null at the top), so clients can place items without seeing position keys.
+  Only successful REST writes publish; a 409 sends nothing.
+- **Access is checked on join**, with the same `notes/access.ts` check as REST. A stranger gets
+  `not_found`, the same as REST's 404, and never receives anything about the note.
+- **Bad messages** (invalid JSON, unknown type, out-of-range cursor) get an `invalid_message` error;
+  the connection stays open. Messages are capped at 16 KB.
+- **Heartbeat:** the server pings every 15 seconds and drops a connection that missed the last ping,
+  which also removes it from presence.
+- **Abuse limits** (`src/presence/limits.ts`), each closing or refusing before one client can hurt the
+  process or other users:
+  - Messages over 16 KB close the connection (1009). Socket errors are always handled, because an
+    unhandled one exits the Node process.
+  - 30 messages a second and 20 waiting on the database per connection (1008 past either).
+  - 50 rooms per connection (`too_many_rooms`) and 20 open connections per user (4429).
+  - A client more than 1 MB behind on reading is dropped instead of buffered without limit.
+  - The connection closes (4401) when its token expires.
+  - A client that disconnects mid-join is never added to the room afterwards.
+- **No Origin check, on purpose:** cross-site WebSocket hijacking rides on cookies, and this socket only
+  trusts a token sent in a message, which another site's page doesn't have. Capping connections per IP
+  before auth is left to the load balancer, as it is for the HTTP API.
+- **One process.** REST handlers publish to an in-process `NoteEvents` bus that the socket server
+  forwards to rooms. More than one process would need Redis pub/sub behind the same bus; noted, not built.
+- **Not built:** re-checking access while connected (matters once sharing lands: an unshare should
+  drop the viewer from the room) and throttling cursor broadcasts beyond the message rate limit.
+- **Limit:** cursors are relayed live, but text syncs only through REST saves, so a remote cursor can
+  drift until the next save. Character-level co-editing needs OT or a CRDT (Yjs), which is out of scope.
+- No frontend ships. The tests drive this with real WebSocket clients against a real server.

@@ -14,7 +14,7 @@ change behavior, and update it in the same PR when behavior changes.
   they never hold their own logic or SQL.
 - zod validates every request body, query and param at the route boundary
 - Auth: bcryptjs password hashes, JWT bearer tokens (jsonwebtoken)
-- Presence: `ws` WebSocket server on the same HTTP server
+- Presence and live changes: `ws` WebSocket server on the same HTTP server (`src/presence/`)
 - Tests: vitest + supertest against a real Postgres (the test database from docker compose)
 - `docker compose up` must start the whole service with no other setup. The reviewer runs it that way.
 
@@ -24,6 +24,7 @@ src/
   app.ts            express app wiring (no listen), used by server.ts and the tests
   server.ts         starts HTTP + WebSocket
   config.ts         env parsing (zod), the only place that reads process.env
+  events.ts         in-process bus: REST writes publish, the WebSocket server forwards to rooms
   db/               kysely instance, generated table types
   auth/  teams/  notes/  checklists/  shares/  search/  mcp/  presence/
                     one folder per feature: routes.ts, service.ts, schemas.ts
