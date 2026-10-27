@@ -5,6 +5,7 @@ import type { Db } from '../db/index.js';
 import type { NoteEvents } from '../events.js';
 import { expectedVersion, setVersionTag } from '../http/preconditions.js';
 import { parse } from '../http/validate.js';
+import { searchNotes } from '../search/service.js';
 import {
   createNoteSchema,
   listNotesSchema,
@@ -25,8 +26,11 @@ export function noteRoutes(db: Db, settings: TokenSettings, events: NoteEvents):
   });
 
   router.get('/notes', async (req, res) => {
-    const input = parse(listNotesSchema, req.query);
-    res.json({ notes: await listNotes(db, callerId(req), input) });
+    const { q, ...input } = parse(listNotesSchema, req.query);
+    const notes = q
+      ? await searchNotes(db, callerId(req), { ...input, q })
+      : await listNotes(db, callerId(req), input);
+    res.json({ notes });
   });
 
   router.get('/notes/:id', async (req, res) => {

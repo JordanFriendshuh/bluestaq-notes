@@ -25,6 +25,7 @@ export interface TeamMembersTable {
   createdAt: Generated<Date>;
 }
 
+// notes.search and note_items.search (generated tsvectors) are left out: only src/search reads them, in SQL.
 export interface NotesTable {
   id: Generated<string>;
   ownerId: string;

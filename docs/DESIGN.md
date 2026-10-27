@@ -158,16 +158,29 @@ check the version inside the note lock, which makes the check and the write atom
 items don't take `If-Match`: deleting is deliberate, and a new item can't conflict with anything.
 
 ## Search
-One search box, no tags: fast, ranked, typo-tolerant search on every keystroke (`GET /notes?q=`).
-It searches title, body and checklist item text (a join on `note_items` with its own index), only returns notes the caller can read (same access CTE
-in the same query), and each result comes with a highlighted snippet.
+One search box, no tags: fast, ranked, typo-tolerant search on every keystroke (`GET /notes?q=`, which
+also takes `scope`, `limit` and `offset`). It searches title, body and checklist item text, only
+returns notes the caller can read (`readableNotes`, in the same query), and each result carries a
+highlighted snippet.
 
-- **Full-text:** the generated `search` tsvector with a GIN index, so stemming works ("meeting"
-  matches "meetings") and title hits rank above body hits. Each word of the query becomes a prefix
-  match (`plan:*`), so results show up while the user is still typing.
-- **Fuzzy:** `pg_trgm` trigram similarity on the title catches typos and partial words that full-text misses.
-- **Ranking:** `ts_rank` plus title similarity. `ts_headline` produces the snippet.
+- **Indexed twice.** `notes.search` and `note_items.search` are generated tsvector columns with GIN
+  indexes. Each text goes in as typed (`simple`) and stemmed (`english`): the first makes prefixes work
+  while the user is still typing ("meetin" finds "meeting", which `english` stores as "meet"), the
+  second makes word forms match ("meetings" finds "meeting"). Titles weigh more than bodies.
+- **Every word must match**, in one of three ways: as a prefix of a word in the title or body, as a
+  prefix of a word in a checklist item, or as a typo of a word in the title (`pg_trgm`
+  `word_similarity` of 0.4 or more, which catches "meetng" and "notse"). Typos are matched in titles
+  only; bodies need the word's start spelled right.
+- **The query is never parsed as tsquery syntax.** It's split into runs of letters and digits (at most 8),
+  and each becomes its own parameter, so `&`, `|`, `!`, `:*` and quotes are just separators.
+- **Ranking:** `ts_rank` on the note, plus half the best checklist item's rank, plus title similarity;
+  ties go to the most recently updated.
+- **Snippets are plain text, never HTML.** `ts_headline` marks matches with control characters that
+  stored text can't contain, and the API returns `snippet: [{ text, highlight }]`. The text parser
+  drops HTML-looking tags from snippets.
+- Headlines are computed only for the page being returned, not for every match.
 - With no `q`, results sort by `updated_at` desc.
+- Search columns never leave the database: note queries list their columns instead of `SELECT *`.
 
 It all runs inside Postgres: no extra service to run or keep in sync. Search by meaning comes from
 AI clients over MCP (below), not from a model inside the service.

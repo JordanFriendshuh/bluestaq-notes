@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { newItemsSchema } from '../checklists/schemas.js';
 import { multiLineText, singleLineText } from '../http/text.js';
+import { searchQuery } from '../search/schemas.js';
 
 const title = singleLineText(1, 200);
 const body = multiLineText(50_000);
@@ -18,6 +19,7 @@ export const updateNoteSchema = z
   });
 
 export const listNotesSchema = z.object({
+  q: searchQuery.optional(),
   scope: z.enum(['all', 'owned', 'shared']).default('all'),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
