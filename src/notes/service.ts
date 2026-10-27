@@ -38,9 +38,11 @@ export async function createNote(db: Db, userId: string, input: CreateNoteInput)
   });
 }
 
-/** Readable notes with their checklists, most recently updated first. */
+/** Readable notes with their checklists, most recently updated first; `scope` narrows to owned or shared. */
 export async function listNotes(db: Db, userId: string, input: ListNotesInput): Promise<Note[]> {
   const rows = await readableNotes(db, userId)
+    .$if(input.scope === 'owned', (qb) => qb.where('notes.ownerId', '=', userId))
+    .$if(input.scope === 'shared', (qb) => qb.where('notes.ownerId', '!=', userId))
     .selectAll('notes')
     .orderBy('notes.updatedAt', 'desc')
     .orderBy('notes.id')
