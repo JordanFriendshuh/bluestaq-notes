@@ -25,10 +25,21 @@ export interface TeamMembersTable {
   createdAt: Generated<Date>;
 }
 
+export interface NotesTable {
+  id: Generated<string>;
+  ownerId: string;
+  title: string;
+  body: Generated<string>;
+  createdAt: Generated<Date>;
+  updatedAt: Generated<Date>;
+}
+
 export interface Database {
   users: UsersTable;
   teams: TeamsTable;
   teamMembers: TeamMembersTable;
+  notes: NotesTable;
 }
 
 export type UserRow = Selectable<UsersTable>;
+export type NoteRow = Selectable<NotesTable>;
