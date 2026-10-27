@@ -19,6 +19,17 @@ export interface Note {
   updatedAt: Date;
 }
 
+/** Columns a note response is built from; never `*`, which would also return the search index column. */
+export const NOTE_COLUMNS = [
+  'id',
+  'ownerId',
+  'title',
+  'body',
+  'version',
+  'createdAt',
+  'updatedAt',
+] as const;
+
 const toNote = (row: NoteRow, role: NoteRole, items: ChecklistItem[]): Note => ({
   ...row,
   items,
@@ -31,7 +42,7 @@ export async function createNote(db: Db, userId: string, input: CreateNoteInput)
     const row = await trx
       .insertInto('notes')
       .values({ ownerId: userId, title: input.title, body: input.body })
-      .returningAll()
+      .returning(NOTE_COLUMNS)
       .executeTakeFirstOrThrow();
     const items = await insertInitialItems(trx, row.id, input.items);
     return toNote(row, 'owner', items);
@@ -43,7 +54,7 @@ export async function listNotes(db: Db, userId: string, input: ListNotesInput): 
   const rows = await readableNotes(db, userId)
     .$if(input.scope === 'owned', (qb) => qb.where('notes.ownerId', '=', userId))
     .$if(input.scope === 'shared', (qb) => qb.where('notes.ownerId', '!=', userId))
-    .selectAll('notes')
+    .select(NOTE_COLUMNS)
     .orderBy('notes.updatedAt', 'desc')
     .orderBy('notes.id')
     .limit(input.limit)
@@ -60,7 +71,7 @@ export async function getNote(db: Db, userId: string, noteId: string): Promise<N
   const role = await requireNoteRole(db, noteId, userId);
   const row = await db
     .selectFrom('notes')
-    .selectAll()
+    .select(NOTE_COLUMNS)
     .where('id', '=', noteId)
     .executeTakeFirstOrThrow();
   const items = await itemsByNote(db, [noteId]);
@@ -87,7 +98,7 @@ export async function updateNote(
     .set({ ...input, version: sql`version + 1`, updatedAt: sql`now()` })
     .where('id', '=', noteId)
     .where('version', '=', expectedVersion)
-    .returningAll()
+    .returning(NOTE_COLUMNS)
     .executeTakeFirst();
   if (!row) throw versionConflict(await getNote(db, userId, noteId));
   const items = await itemsByNote(db, [noteId]);
