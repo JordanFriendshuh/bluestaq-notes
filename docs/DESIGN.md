@@ -23,6 +23,9 @@ note_shares  id uuid pk, note_id -> notes on delete cascade,
              check (exactly one of user_id, team_id), unique per (note, user) and (note, team)
 ```
 - **Checklists live inside the note** as `items: [{ id, text, done }]`. A note can be prose, a list, or both.
+  `PATCH` with `items` replaces the whole list; leaving `items` out keeps it. Items without an `id` get a
+  server-generated UUID, so clients can track them. Ids must be unique within the note; up to 500 items
+  of one-line text, 1–500 characters each.
 - **Shares use two nullable foreign keys, not a polymorphic `principal_id`**, so Postgres enforces
   referential integrity and deleting a user or team cleans up its grants.
 - **Effective role** = owner if `owner_id` matches, otherwise the highest role across the caller's direct
