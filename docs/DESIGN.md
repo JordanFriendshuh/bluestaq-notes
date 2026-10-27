@@ -69,6 +69,8 @@ note_shares  id uuid pk, note_id -> notes on delete cascade,
   be set by clients, and `__proto__` keys never reach our objects.
 - One-line text (names, titles) rejects control characters. That covers NUL (which Postgres can't
   store, so it used to become a 500), newlines (log/header injection) and terminal escape sequences.
+- Multi-line text (note bodies) keeps newlines and tabs but rejects every other control character.
+  Titles are 1–200 characters and bodies up to 50,000.
 - JSON only, 256 KB max (413 above that), and helmet's security headers (HSTS, nosniff, frame options)
   on every response, error responses included.
 
