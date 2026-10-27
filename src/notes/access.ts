@@ -1,5 +1,6 @@
 import { sql } from 'kysely';
 import type { Db } from '../db/index.js';
+import { notFound } from '../http/errors.js';
 
 export type NoteRole = 'owner' | 'editor' | 'viewer';
 
@@ -24,3 +25,12 @@ export function readableNotes(db: Db, userId: string) {
     .select(sql<NoteRole>`'owner'`.as('role'))
     .where('notes.ownerId', '=', userId);
 }
+
+/** The caller's role, with a 404 when they can't read the note so its existence doesn't leak. */
+export async function requireNoteRole(db: Db, noteId: string, userId: string): Promise<NoteRole> {
+  const role = await noteRole(db, noteId, userId);
+  if (!role) throw notFound('Note');
+  return role;
+}
+
+export const canEdit = (role: NoteRole) => role === 'owner' || role === 'editor';
