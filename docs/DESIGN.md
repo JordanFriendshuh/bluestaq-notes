@@ -38,7 +38,9 @@ note_shares  id uuid pk, note_id -> notes on delete cascade,
 - **Shares use two nullable foreign keys, not a polymorphic `principal_id`**, so Postgres enforces
   referential integrity and deleting a user or team cleans up its grants.
 - **Effective role** = owner if `owner_id` matches, otherwise the highest role across the caller's direct
-  grant and the grants of every team they belong to. One SQL function/CTE computes it (`notes/access.ts`).
+  grant and the grants of every team they belong to. One query builder computes it
+  (`readableNotes` in `notes/access.ts`); the single-note check, the list and the WebSocket join all use it.
+  Access follows team membership live: leave a team and its grants stop applying at once.
 
 ## Auth
 - Email + password. Passwords are hashed with bcrypt (cost 12, configurable). They're limited to 72
@@ -92,7 +94,12 @@ note_shares  id uuid pk, note_id -> notes on delete cascade,
 | Read note                   | ✓     | ✓      | ✓      |
 | Edit title, body, items     | ✓     | ✓      |        |
 | Delete note                 | ✓     |        |        |
-| Add or remove shares        | ✓     |        |        |
+| See, add or remove shares   | ✓     |        |        |
+
+Sharing rules: a grant goes to one user (by email) or one team, as `viewer` or `editor`. Sharing the
+same grantee again changes the role. The owner can only grant teams they belong to, so nobody can push
+notes into a stranger's team, and can't grant themselves. `GET /notes?scope=owned|shared` splits the
+list; every note in it carries the caller's `role`.
 
 Teams: anyone can create one and becomes its owner. Owners add existing users by email (as `member`
 or `owner`), remove anyone, and delete the team. Members can see the team and its member list, and can leave.
@@ -211,6 +218,7 @@ server -> { type: "note.deleted", noteId, by }
 server -> { type: "item.added", noteId, by, item, after }
 server -> { type: "item.updated", noteId, by, item, after? }   after only when the item moved
 server -> { type: "item.deleted", noteId, by, itemId }
+server -> { type: "access.revoked", noteId }             you were removed from the room
 server -> { type: "error", code, message }
 ```
 - **Auth is the first message, not the URL.** Browsers can't set headers on a WebSocket, and a token in
@@ -240,8 +248,11 @@ server -> { type: "error", code, message }
   before auth is left to the load balancer, as it is for the HTTP API.
 - **One process.** REST handlers publish to an in-process `NoteEvents` bus that the socket server
   forwards to rooms. More than one process would need Redis pub/sub behind the same bus; noted, not built.
-- **Not built:** re-checking access while connected (matters once sharing lands: an unshare should
-  drop the viewer from the room) and throttling cursor broadcasts beyond the message rate limit.
+- **Access is re-checked live.** Changing or removing a share, removing a team member, or deleting a
+  team publishes `access.changed`. The socket server re-runs the access check for the affected rooms:
+  anyone who lost access gets `access.revoked` and is removed, and anyone downgraded to viewer stops
+  showing as editing.
+- **Not built:** throttling cursor broadcasts beyond the message rate limit.
 - **Limit:** cursors are relayed live, but text syncs only through REST saves, so a remote cursor can
   drift until the next save. Character-level co-editing needs OT or a CRDT (Yjs), which is out of scope.
 - No frontend ships. The tests drive this with real WebSocket clients against a real server.
