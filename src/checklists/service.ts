@@ -2,6 +2,7 @@ import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing';
 import { sql } from 'kysely';
 import type { Db } from '../db/index.js';
 import { HttpError, notFound } from '../http/errors.js';
+import { versionConflict } from '../http/preconditions.js';
 import { canEdit, requireNoteRole } from '../notes/access.js';
 import {
   MAX_ITEMS,
@@ -14,9 +15,10 @@ export interface ChecklistItem {
   id: string;
   text: string;
   done: boolean;
+  version: number;
 }
 
-const ITEM_COLUMNS = ['id', 'text', 'done'] as const;
+const ITEM_COLUMNS = ['id', 'text', 'done', 'version'] as const;
 
 /** Inserts a new note's starting items in the order given. */
 export async function insertInitialItems(
@@ -135,24 +137,34 @@ export async function addItem(
   });
 }
 
-/** Changes an item's text or done flag, or moves it with `after`. */
+/**
+ * Changes an item's text or done flag, or moves it with `after`, if it's still at `expectedVersion`;
+ * a stale version is a 409 with the current item. The note lock makes the check and update atomic.
+ */
 export async function updateItem(
   db: Db,
   userId: string,
   noteId: string,
   itemId: string,
+  expectedVersion: number,
   input: UpdateItemInput,
 ): Promise<ChecklistItem> {
   return db.transaction().execute(async (trx) => {
     await lockNoteForEdit(trx, noteId, userId);
-    await requireItem(trx, noteId, itemId);
+    const current = await requireItem(trx, noteId, itemId);
+    if (current.version !== expectedVersion) throw versionConflict(current);
 
     const { after, ...fields } = input;
     const position =
       after === undefined ? undefined : await positionFor(trx, noteId, after, itemId);
     return trx
       .updateTable('noteItems')
-      .set({ ...fields, ...(position && { position }), updatedAt: sql`now()` })
+      .set({
+        ...fields,
+        ...(position && { position }),
+        version: sql`version + 1`,
+        updatedAt: sql`now()`,
+      })
       .where('id', '=', itemId)
       .returning(ITEM_COLUMNS)
       .executeTakeFirstOrThrow();
@@ -172,12 +184,13 @@ export async function deleteItem(
   });
 }
 
-async function requireItem(db: Db, noteId: string, itemId: string): Promise<void> {
+async function requireItem(db: Db, noteId: string, itemId: string): Promise<ChecklistItem> {
   const item = await db
     .selectFrom('noteItems')
-    .select('id')
+    .select(ITEM_COLUMNS)
     .where('id', '=', itemId)
     .where('noteId', '=', noteId)
     .executeTakeFirst();
   if (!item) throw notFound('Item');
+  return item;
 }

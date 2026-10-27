@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { callerId, requireAuth } from '../auth/middleware.js';
 import type { TokenSettings } from '../auth/tokens.js';
 import type { Db } from '../db/index.js';
+import { expectedVersion, setVersionTag } from '../http/preconditions.js';
 import { parse } from '../http/validate.js';
 import { noteParamsSchema } from '../notes/schemas.js';
 import { addItemSchema, itemParamsSchema, updateItemSchema } from './schemas.js';
@@ -20,7 +21,9 @@ export function checklistRoutes(db: Db, settings: TokenSettings): Router {
   router.patch('/notes/:id/items/:itemId', async (req, res) => {
     const { id, itemId } = parse(itemParamsSchema, req.params);
     const input = parse(updateItemSchema, req.body);
-    res.json({ item: await updateItem(db, callerId(req), id, itemId, input) });
+    const item = await updateItem(db, callerId(req), id, itemId, expectedVersion(req), input);
+    setVersionTag(res, item.version);
+    res.json({ item });
   });
 
   router.delete('/notes/:id/items/:itemId', async (req, res) => {

@@ -30,6 +30,7 @@ export interface NotesTable {
   ownerId: string;
   title: string;
   body: Generated<string>;
+  version: Generated<number>;
   createdAt: Generated<Date>;
   updatedAt: Generated<Date>;
 }
@@ -40,6 +41,7 @@ export interface NoteItemsTable {
   text: string;
   done: Generated<boolean>;
   position: string;
+  version: Generated<number>;
   createdAt: Generated<Date>;
   updatedAt: Generated<Date>;
 }

@@ -9,8 +9,8 @@ export const unknownRoute: RequestHandler = () => {
 /** Turns any thrown error into the standard error body; unexpected errors become a bare 500. */
 export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (err instanceof HttpError) {
-    const { status, code, message, details } = err;
-    res.status(status).json({ error: { code, message, ...(details && { details }) } });
+    const { status, code, message, details, extra } = err;
+    res.status(status).json({ error: { code, message, ...(details && { details }), ...extra } });
     return;
   }
   // express.json() flags client mistakes (bad JSON, too large, unsupported charset) with expose and a 4xx status.

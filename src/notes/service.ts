@@ -2,7 +2,8 @@ import { sql } from 'kysely';
 import { insertInitialItems, itemsByNote, type ChecklistItem } from '../checklists/service.js';
 import type { Db } from '../db/index.js';
 import type { NoteRow } from '../db/types.js';
-import { HttpError, notFound } from '../http/errors.js';
+import { HttpError } from '../http/errors.js';
+import { versionConflict } from '../http/preconditions.js';
 import { canEdit, readableNotes, requireNoteRole, type NoteRole } from './access.js';
 import type { CreateNoteInput, ListNotesInput, UpdateNoteInput } from './schemas.js';
 
@@ -11,6 +12,7 @@ export interface Note {
   ownerId: string;
   title: string;
   body: string;
+  version: number;
   items: ChecklistItem[];
   role: NoteRole;
   createdAt: Date;
@@ -63,11 +65,15 @@ export async function getNote(db: Db, userId: string, noteId: string): Promise<N
   return toNote(row, role, items.get(noteId) ?? []);
 }
 
-/** Changes only the fields sent; needs the editor role. Checklist items change through their own routes. */
+/**
+ * Changes only the fields sent if the note is still at `expectedVersion`, then bumps the version;
+ * a stale version is a 409 with the current note. Needs the editor role.
+ */
 export async function updateNote(
   db: Db,
   userId: string,
   noteId: string,
+  expectedVersion: number,
   input: UpdateNoteInput,
 ): Promise<Note> {
   const role = await requireNoteRole(db, noteId, userId);
@@ -76,11 +82,12 @@ export async function updateNote(
 
   const row = await db
     .updateTable('notes')
-    .set({ ...input, updatedAt: sql`now()` })
+    .set({ ...input, version: sql`version + 1`, updatedAt: sql`now()` })
     .where('id', '=', noteId)
+    .where('version', '=', expectedVersion)
     .returningAll()
     .executeTakeFirst();
-  if (!row) throw notFound('Note');
+  if (!row) throw versionConflict(await getNote(db, userId, noteId));
   const items = await itemsByNote(db, [noteId]);
   return toNote(row, role, items.get(noteId) ?? []);
 }
