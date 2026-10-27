@@ -6,6 +6,7 @@ import type { Db } from './db/index.js';
 import { checklistRoutes } from './checklists/routes.js';
 import type { NoteEvents } from './events.js';
 import { errorHandler, unknownRoute } from './http/error-handler.js';
+import { mcpRoutes } from './mcp/routes.js';
 import { noteRoutes } from './notes/routes.js';
 import { shareRoutes } from './shares/routes.js';
 import { teamRoutes } from './teams/routes.js';
@@ -34,6 +35,7 @@ export function createApp({ db, auth, events, behindProxy = false }: AppDeps) {
   app.use(noteRoutes(db, auth, events));
   app.use(checklistRoutes(db, auth, events));
   app.use(shareRoutes(db, auth, events));
+  app.use(mcpRoutes(db, auth, events));
 
   app.use(unknownRoute);
   app.use(errorHandler);
