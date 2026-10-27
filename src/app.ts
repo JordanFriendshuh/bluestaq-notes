@@ -4,6 +4,7 @@ import { sql } from 'kysely';
 import { authRoutes, type AuthSettings } from './auth/routes.js';
 import type { Db } from './db/index.js';
 import { errorHandler, unknownRoute } from './http/error-handler.js';
+import { teamRoutes } from './teams/routes.js';
 
 export interface AppDeps {
   db: Db;
@@ -24,6 +25,7 @@ export function createApp({ db, auth, behindProxy = false }: AppDeps) {
     res.json({ status: 'ok' });
   });
   app.use(authRoutes(db, auth));
+  app.use(teamRoutes(db, auth));
 
   app.use(unknownRoute);
   app.use(errorHandler);
