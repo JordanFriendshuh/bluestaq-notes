@@ -71,6 +71,10 @@ Routes parse input and shape output. Services hold the logic and the SQL. Routes
 - New behavior ships with tests. Permission rules get tests for every role: owner, editor, viewer,
   team member, stranger.
 
+## Before submission
+- Review every SQL query for efficiency: run `EXPLAIN ANALYZE` on realistic data, check index use
+  (especially the note access CTE and search), and look for N+1 queries and missing indexes.
+
 ## README requirements (from the challenge)
 The final README must have: how to run it and run the tests, the 2–3 design choices we spent the most
 time on and why, what we'd change, add or stop doing with more time, and a short, plain note that it
