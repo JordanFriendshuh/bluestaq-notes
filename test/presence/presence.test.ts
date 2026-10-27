@@ -323,3 +323,26 @@ describe('shared notes', () => {
     expect(await client.next('access.revoked')).toMatchObject({ noteId });
   });
 });
+
+describe('deleted teams', () => {
+  it('removes former members from rooms the team gave them', async () => {
+    const member = await registerTestUser(app, 'member');
+    const auth = `Bearer ${owner.token}`;
+    const teamId = (
+      await request(app).post('/teams').set('Authorization', auth).send({ name: 'T' })
+    ).body.team.id;
+    await request(app)
+      .post(`/teams/${teamId}/members`)
+      .set('Authorization', auth)
+      .send({ email: member.user.email });
+    await request(app)
+      .put(`/notes/${noteId}/shares`)
+      .set('Authorization', auth)
+      .send({ teamId, role: 'viewer' });
+    const client = await joined(member);
+
+    await request(app).delete(`/teams/${teamId}`).set('Authorization', auth).expect(204);
+
+    expect(await client.next('access.revoked')).toMatchObject({ noteId });
+  });
+});
