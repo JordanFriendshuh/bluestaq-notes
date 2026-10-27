@@ -25,7 +25,7 @@ src/
   server.ts         starts HTTP + WebSocket
   config.ts         env parsing (zod), the only place that reads process.env
   db/               kysely instance, generated table types
-  auth/  teams/  notes/  shares/  search/  mcp/  presence/
+  auth/  teams/  notes/  checklists/  shares/  search/  mcp/  presence/
                     one folder per feature: routes.ts, service.ts, schemas.ts
   middleware/       auth, error handler, validation
 migrations/         numbered .sql files, forward only

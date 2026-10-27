@@ -1,8 +1,9 @@
 import { sql } from 'kysely';
+import { insertInitialItems, itemsByNote, type ChecklistItem } from '../checklists/service.js';
 import type { Db } from '../db/index.js';
 import type { NoteRow } from '../db/types.js';
 import { HttpError, notFound } from '../http/errors.js';
-import { noteRole, readableNotes, type NoteRole } from './access.js';
+import { canEdit, readableNotes, requireNoteRole, type NoteRole } from './access.js';
 import type { CreateNoteInput, ListNotesInput, UpdateNoteInput } from './schemas.js';
 
 export interface Note {
@@ -10,31 +11,32 @@ export interface Note {
   ownerId: string;
   title: string;
   body: string;
+  items: ChecklistItem[];
   role: NoteRole;
   createdAt: Date;
   updatedAt: Date;
 }
 
-const canEdit = (role: NoteRole) => role === 'owner' || role === 'editor';
-const toNote = (row: NoteRow, role: NoteRole): Note => ({ ...row, role });
+const toNote = (row: NoteRow, role: NoteRole, items: ChecklistItem[]): Note => ({
+  ...row,
+  items,
+  role,
+});
 
-/** The caller's role, with a 404 when they can't read the note so its existence doesn't leak. */
-async function requireRole(db: Db, noteId: string, userId: string): Promise<NoteRole> {
-  const role = await noteRole(db, noteId, userId);
-  if (!role) throw notFound('Note');
-  return role;
-}
-
+/** Creates a note and its starting checklist together. */
 export async function createNote(db: Db, userId: string, input: CreateNoteInput): Promise<Note> {
-  const row = await db
-    .insertInto('notes')
-    .values({ ownerId: userId, title: input.title, body: input.body })
-    .returningAll()
-    .executeTakeFirstOrThrow();
-  return toNote(row, 'owner');
+  return db.transaction().execute(async (trx) => {
+    const row = await trx
+      .insertInto('notes')
+      .values({ ownerId: userId, title: input.title, body: input.body })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+    const items = await insertInitialItems(trx, row.id, input.items);
+    return toNote(row, 'owner', items);
+  });
 }
 
-/** Readable notes, most recently updated first. */
+/** Readable notes with their checklists, most recently updated first. */
 export async function listNotes(db: Db, userId: string, input: ListNotesInput): Promise<Note[]> {
   const rows = await readableNotes(db, userId)
     .selectAll('notes')
@@ -43,27 +45,32 @@ export async function listNotes(db: Db, userId: string, input: ListNotesInput): 
     .limit(input.limit)
     .offset(input.offset)
     .execute();
-  return rows;
+  const items = await itemsByNote(
+    db,
+    rows.map((row) => row.id),
+  );
+  return rows.map(({ role, ...row }) => toNote(row, role, items.get(row.id) ?? []));
 }
 
 export async function getNote(db: Db, userId: string, noteId: string): Promise<Note> {
-  const role = await requireRole(db, noteId, userId);
+  const role = await requireNoteRole(db, noteId, userId);
   const row = await db
     .selectFrom('notes')
     .selectAll()
     .where('id', '=', noteId)
     .executeTakeFirstOrThrow();
-  return toNote(row, role);
+  const items = await itemsByNote(db, [noteId]);
+  return toNote(row, role, items.get(noteId) ?? []);
 }
 
-/** Changes only the fields sent; needs the editor role. */
+/** Changes only the fields sent; needs the editor role. Checklist items change through their own routes. */
 export async function updateNote(
   db: Db,
   userId: string,
   noteId: string,
   input: UpdateNoteInput,
 ): Promise<Note> {
-  const role = await requireRole(db, noteId, userId);
+  const role = await requireNoteRole(db, noteId, userId);
   if (!canEdit(role))
     throw new HttpError(403, 'forbidden', 'You can view this note but not edit it');
 
@@ -74,12 +81,13 @@ export async function updateNote(
     .returningAll()
     .executeTakeFirst();
   if (!row) throw notFound('Note');
-  return toNote(row, role);
+  const items = await itemsByNote(db, [noteId]);
+  return toNote(row, role, items.get(noteId) ?? []);
 }
 
-/** Deletes a note; only its owner can. */
+/** Deletes a note and its checklist; only its owner can. */
 export async function deleteNote(db: Db, userId: string, noteId: string): Promise<void> {
-  const role = await requireRole(db, noteId, userId);
+  const role = await requireNoteRole(db, noteId, userId);
   if (role !== 'owner') throw new HttpError(403, 'forbidden', 'Only the owner can delete a note');
   await db.deleteFrom('notes').where('id', '=', noteId).execute();
 }

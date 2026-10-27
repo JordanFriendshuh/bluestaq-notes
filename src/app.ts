@@ -3,6 +3,7 @@ import helmet from 'helmet';
 import { sql } from 'kysely';
 import { authRoutes, type AuthSettings } from './auth/routes.js';
 import type { Db } from './db/index.js';
+import { checklistRoutes } from './checklists/routes.js';
 import { errorHandler, unknownRoute } from './http/error-handler.js';
 import { noteRoutes } from './notes/routes.js';
 import { teamRoutes } from './teams/routes.js';
@@ -28,6 +29,7 @@ export function createApp({ db, auth, behindProxy = false }: AppDeps) {
   app.use(authRoutes(db, auth));
   app.use(teamRoutes(db, auth));
   app.use(noteRoutes(db, auth));
+  app.use(checklistRoutes(db, auth));
 
   app.use(unknownRoute);
   app.use(errorHandler);

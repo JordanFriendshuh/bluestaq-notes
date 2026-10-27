@@ -34,11 +34,22 @@ export interface NotesTable {
   updatedAt: Generated<Date>;
 }
 
+export interface NoteItemsTable {
+  id: Generated<string>;
+  noteId: string;
+  text: string;
+  done: Generated<boolean>;
+  position: string;
+  createdAt: Generated<Date>;
+  updatedAt: Generated<Date>;
+}
+
 export interface Database {
   users: UsersTable;
   teams: TeamsTable;
   teamMembers: TeamMembersTable;
   notes: NotesTable;
+  noteItems: NoteItemsTable;
 }
 
 export type UserRow = Selectable<UsersTable>;
