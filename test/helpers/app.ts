@@ -3,6 +3,7 @@ import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import type { AuthSettings } from '../../src/auth/routes.js';
 import type { Db } from '../../src/db/index.js';
+import { NoteEvents } from '../../src/events.js';
 import { openTestDb } from './db.js';
 
 export const testAuth: AuthSettings = {
@@ -15,7 +16,9 @@ export const testAuth: AuthSettings = {
 /** An app wired to the test database with fast password hashing; overrides adjust auth settings. */
 export function createTestApp(overrides: Partial<AuthSettings> = {}) {
   const { pool, db } = openTestDb();
-  return { app: createApp({ db, auth: { ...testAuth, ...overrides } }), db, pool };
+  const events = new NoteEvents();
+  const auth = { ...testAuth, ...overrides };
+  return { app: createApp({ db, auth, events }), db, pool, events, auth };
 }
 
 /** Empties every application table, keeping the migration history; refuses to touch a non-test database. */

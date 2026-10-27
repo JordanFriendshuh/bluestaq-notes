@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
+import { NoteEvents } from '../../src/events.js';
 import { dummyHash } from '../../src/auth/service.js';
 import { createTestApp, resetDb, testAuth } from '../helpers/app.js';
 
@@ -14,7 +15,11 @@ describe('brute force', () => {
 
   beforeEach(async () => {
     await resetDb(db);
-    app = createApp({ db, auth: { ...testAuth, rateLimit: { windowSeconds: 60, limit: 3 } } });
+    app = createApp({
+      db,
+      auth: { ...testAuth, rateLimit: { windowSeconds: 60, limit: 3 } },
+      events: new NoteEvents(),
+    });
   });
   afterAll(() => db.destroy());
 
