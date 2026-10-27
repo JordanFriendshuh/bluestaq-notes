@@ -3,23 +3,23 @@ import { singleLineText } from '../http/text.js';
 
 export const MAX_ITEMS = 500;
 
-const text = singleLineText(1, 500);
+export const itemText = singleLineText(1, 500);
 
 /** Where to put an item: after another item's id, null for the top, or omitted for the bottom. */
-const after = z.uuid().nullable().optional();
+export const itemAfter = z.uuid().nullable().optional();
 
 export const newItemsSchema = z
-  .array(z.object({ text, done: z.boolean().default(false) }))
+  .array(z.object({ text: itemText, done: z.boolean().default(false) }))
   .max(MAX_ITEMS);
 
 export const addItemSchema = z.object({
-  text,
+  text: itemText,
   done: z.boolean().default(false),
-  after,
+  after: itemAfter,
 });
 
 export const updateItemSchema = z
-  .object({ text: text.optional(), done: z.boolean().optional(), after })
+  .object({ text: itemText.optional(), done: z.boolean().optional(), after: itemAfter })
   .refine((input) => Object.values(input).some((value) => value !== undefined), {
     message: 'Send at least one of text, done or after',
   });

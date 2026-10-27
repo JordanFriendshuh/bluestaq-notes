@@ -3,17 +3,17 @@ import { newItemsSchema } from '../checklists/schemas.js';
 import { multiLineText, singleLineText } from '../http/text.js';
 import { searchQuery } from '../search/schemas.js';
 
-const title = singleLineText(1, 200);
-const body = multiLineText(50_000);
+export const noteTitle = singleLineText(1, 200);
+export const noteBody = multiLineText(50_000);
 
 export const createNoteSchema = z.object({
-  title,
-  body: body.default(''),
+  title: noteTitle,
+  body: noteBody.default(''),
   items: newItemsSchema.default([]),
 });
 
 export const updateNoteSchema = z
-  .object({ title: title.optional(), body: body.optional() })
+  .object({ title: noteTitle.optional(), body: noteBody.optional() })
   .refine((input) => input.title !== undefined || input.body !== undefined, {
     message: 'Send at least one of title or body',
   });
