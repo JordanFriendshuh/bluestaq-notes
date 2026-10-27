@@ -10,4 +10,25 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     },
   },
+  {
+    // The playground is plain browser JavaScript.
+    files: ['playground/**/*.js'],
+    languageOptions: {
+      sourceType: 'script',
+      globals: Object.fromEntries(
+        [
+          'document',
+          'location',
+          'sessionStorage',
+          'fetch',
+          'WebSocket',
+          'FormData',
+          'URLSearchParams',
+          'setTimeout',
+          'clearTimeout',
+          'confirm',
+        ].map((name) => [name, 'readonly']),
+      ),
+    },
+  },
 );

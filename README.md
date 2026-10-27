@@ -46,6 +46,13 @@ api -H "$AUTH" 'https://localhost:3000/notes?q=budg'    # search as you type
 Updates need the version you last read: `PATCH /notes/:id` with `If-Match: "1"`. A stale version
 gets a 409 that includes the current note.
 
+### Or click around
+
+Open https://localhost:3000/playground/ for a small browser client (plain HTML and JavaScript in
+`playground/`, served by the API). It covers sign-in, search, notes, checklists, sharing, teams, and
+live presence. Sign in as different users in two tabs and open the same note to watch presence and
+live edits. Your browser will warn about the local certificate; trust `secrets/ca.crt` or proceed.
+
 ### Use it from Claude Code (MCP)
 
 ```sh

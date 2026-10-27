@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import helmet from 'helmet';
 import { sql } from 'kysely';
@@ -10,6 +11,8 @@ import { mcpRoutes } from './mcp/routes.js';
 import { noteRoutes } from './notes/routes.js';
 import { shareRoutes } from './shares/routes.js';
 import { teamRoutes } from './teams/routes.js';
+
+const PLAYGROUND_DIR = fileURLToPath(new URL('../playground', import.meta.url));
 
 export interface AppDeps {
   db: Db;
@@ -30,6 +33,8 @@ export function createApp({ db, auth, events, behindProxy = false }: AppDeps) {
     await sql`SELECT 1`.execute(db);
     res.json({ status: 'ok' });
   });
+  // A static browser client for trying the API by hand; same origin, so no CORS.
+  app.use('/playground', express.static(PLAYGROUND_DIR));
   app.use(authRoutes(db, auth));
   app.use(teamRoutes(db, auth, events));
   app.use(noteRoutes(db, auth, events));
