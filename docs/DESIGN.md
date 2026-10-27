@@ -80,8 +80,14 @@ note_shares  id uuid pk, note_id -> notes on delete cascade,
 | Delete note                 | ✓     |        |        |
 | Add or remove shares        | ✓     |        |        |
 
-Teams: anyone can create one and becomes its owner. Team owners add and remove members by email.
-Members can see the team and its member list.
+Teams: anyone can create one and becomes its owner. Owners add existing users by email (as `member`
+or `owner`), remove anyone, and delete the team. Members can see the team and its member list, and can leave.
+- Deleting a team removes its memberships and every note share granted to it (foreign-key cascade).
+  The notes themselves stay with their owners.
+- A team always keeps at least one owner (409 `last_owner`). Removal locks the team row, so two owners
+  removing each other at the same moment can't leave it ownerless.
+- A team the caller isn't on is a 404, the same as for notes. Adding an unknown email is 404
+  `user_not_found`, and adding someone already on the team is 409 `already_member`.
 
 ## API
 All JSON. Auth is `Authorization: Bearer <jwt>` everywhere except register, login and health.
@@ -90,7 +96,7 @@ POST   /auth/register           { email, password, displayName } -> { token, use
 POST   /auth/login              { email, password } -> { token, user }
 GET    /me
 
-POST   /teams                   GET /teams          GET /teams/:id
+POST   /teams                   GET /teams          GET /teams/:id      DELETE /teams/:id
 POST   /teams/:id/members       { email, role }
 DELETE /teams/:id/members/:userId
 
