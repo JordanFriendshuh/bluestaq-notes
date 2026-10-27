@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Team Notes</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <!-- Sign in -->
+    <section id="auth" class="auth" hidden>
+      <form id="auth-form" class="card auth-card">
+        <h1>Team Notes</h1>
+        <p class="muted">A playground for the API. Each browser tab can be a different user.</p>
+        <div class="tabs" role="tablist">
+          <button type="button" class="tab active" data-mode="login">Sign in</button>
+          <button type="button" class="tab" data-mode="register">Create account</button>
+        </div>
+        <label id="name-field" hidden>
+          Name
+          <input name="displayName" autocomplete="name" />
+        </label>
+        <label>
+          Email
+          <input name="email" type="email" autocomplete="email" required />
+        </label>
+        <label>
+          Password
+          <input
+            name="password"
+            type="password"
+            minlength="8"
+            autocomplete="current-password"
+            required
+          />
+        </label>
+        <button class="primary" type="submit">Sign in</button>
+        <p id="auth-error" class="error" hidden></p>
+      </form>
+    </section>
+
+    <!-- App -->
+    <section id="app" class="app" hidden>
+      <header class="topbar">
+        <strong class="brand">Team Notes</strong>
+        <span id="live" class="live" title="Live connection">offline</span>
+        <span class="spacer"></span>
+        <button id="teams-button" class="ghost">Teams</button>
+        <span id="me" class="me"></span>
+        <button id="sign-out" class="ghost">Sign out</button>
+      </header>
+
+      <aside class="sidebar">
+        <input
+          id="search"
+          class="search"
+          type="search"
+          placeholder="Search notes…"
+          autocomplete="off"
+        />
+        <div class="segmented" role="tablist">
+          <button class="seg active" data-scope="all">All</button>
+          <button class="seg" data-scope="owned">Mine</button>
+          <button class="seg" data-scope="shared">Shared</button>
+        </div>
+        <button id="new-note" class="primary block">New note</button>
+        <ul id="note-list" class="note-list"></ul>
+      </aside>
+
+      <main class="main">
+        <div id="empty" class="empty">
+          <p>Pick a note, or create one.</p>
+          <p class="muted">
+            Open the same note in two tabs as two users to see presence and live edits.
+          </p>
+        </div>
+
+        <article id="editor" class="editor" hidden>
+          <div id="banner" class="banner" hidden>
+            <span id="banner-text"></span>
+            <span class="spacer"></span>
+            <span id="banner-actions"></span>
+          </div>
+
+          <div class="editor-head">
+            <input id="title" class="title" maxlength="200" placeholder="Title" />
+            <div class="editor-actions">
+              <button id="share-button" class="ghost" hidden>Share</button>
+              <button id="delete-note" class="ghost danger" hidden>Delete</button>
+            </div>
+          </div>
+          <div class="meta">
+            <span id="role" class="badge"></span>
+            <span id="version" class="muted"></span>
+            <span class="spacer"></span>
+            <span id="presence" class="presence"></span>
+          </div>
+
+          <textarea id="body" class="body" placeholder="Write something…"></textarea>
+
+          <section class="checklist">
+            <h2>Checklist</h2>
+            <ul id="items" class="items"></ul>
+            <form id="add-item" class="add-item">
+              <input id="new-item" placeholder="Add an item and press Enter" maxlength="500" />
+            </form>
+          </section>
+
+          <footer class="editor-foot">
+            <span id="save-state" class="muted"></span>
+            <span class="spacer"></span>
+            <button id="save" class="primary" disabled>Save</button>
+          </footer>
+        </article>
+      </main>
+    </section>
+
+    <!-- Drawers -->
+    <aside id="share-panel" class="drawer" hidden>
+      <div class="drawer-head">
+        <h2>Sharing</h2>
+        <button class="ghost close" data-close="share-panel">Close</button>
+      </div>
+      <ul id="shares" class="rows"></ul>
+      <form id="share-form" class="stack">
+        <label>
+          Share with
+          <select id="share-target"></select>
+        </label>
+        <input id="share-email" type="email" placeholder="person@example.com" />
+        <label>
+          Role
+          <select id="share-role">
+            <option value="viewer">Viewer</option>
+            <option value="editor">Editor</option>
+          </select>
+        </label>
+        <button class="primary" type="submit">Share</button>
+      </form>
+    </aside>
+
+    <aside id="teams-panel" class="drawer" hidden>
+      <div class="drawer-head">
+        <h2>Teams</h2>
+        <button class="ghost close" data-close="teams-panel">Close</button>
+      </div>
+      <ul id="teams" class="rows"></ul>
+      <form id="team-form" class="inline">
+        <input id="team-name" placeholder="New team name" maxlength="100" required />
+        <button class="primary" type="submit">Create</button>
+      </form>
+      <section id="team-detail" hidden>
+        <div class="drawer-head">
+          <h3 id="team-title"></h3>
+          <button id="delete-team" class="ghost danger" hidden>Delete team</button>
+        </div>
+        <ul id="members" class="rows"></ul>
+        <form id="member-form" class="inline" hidden>
+          <input id="member-email" type="email" placeholder="person@example.com" required />
+          <select id="member-role">
+            <option value="member">Member</option>
+            <option value="owner">Owner</option>
+          </select>
+          <button class="primary" type="submit">Add</button>
+        </form>
+      </section>
+    </aside>
+
+    <div id="toast" class="toast" hidden></div>
+  </body>
+</html>
