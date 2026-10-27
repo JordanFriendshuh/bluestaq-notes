@@ -1,17 +1,29 @@
-import { sql, type RawBuilder } from 'kysely';
+import { sql } from 'kysely';
 import type { Db } from '../db/index.js';
 import { notFound } from '../http/errors.js';
 
 export type NoteRole = 'owner' | 'editor' | 'viewer';
 
-/** Grants on `notes.id` to the user directly or to any team they belong to, optionally only editor grants. */
-function grantsFor(userId: string, editorOnly: boolean): RawBuilder<unknown> {
-  return sql`
-    SELECT 1 FROM note_shares s
-    WHERE s.note_id = notes.id
-      AND (s.user_id = ${userId}
-           OR s.team_id IN (SELECT tm.team_id FROM team_members tm WHERE tm.user_id = ${userId}))
-      ${editorOnly ? sql`AND s.role = 'editor'` : sql``}`;
+/**
+ * Every note the user can reach and how: ownership, a direct grant, or a grant to one of their teams,
+ * with the highest role per note. Each branch is an index lookup, and a filter on note_id is pushed
+ * into all three, so this serves both "list my notes" and "can I open this one".
+ */
+function accessGrants(userId: string) {
+  return sql<{ noteId: string; role: NoteRole }>`(
+    SELECT note_id, (CASE max(rank) WHEN 3 THEN 'owner' WHEN 2 THEN 'editor' ELSE 'viewer' END) AS role
+    FROM (
+      SELECT id AS note_id, 3 AS rank FROM notes WHERE owner_id = ${userId}
+      UNION ALL
+      SELECT note_id, CASE role WHEN 'editor' THEN 2 ELSE 1 END
+      FROM note_shares WHERE user_id = ${userId}
+      UNION ALL
+      SELECT s.note_id, CASE s.role WHEN 'editor' THEN 2 ELSE 1 END
+      FROM note_shares s JOIN team_members tm ON tm.team_id = s.team_id
+      WHERE tm.user_id = ${userId}
+    ) grants
+    GROUP BY note_id
+  )`;
 }
 
 /**
@@ -19,17 +31,10 @@ function grantsFor(userId: string, editorOnly: boolean): RawBuilder<unknown> {
  * across their direct grant and their teams' grants. The one place access is decided.
  */
 export function readableNotes(db: Db, userId: string) {
-  const role = sql<NoteRole>`CASE
-    WHEN notes.owner_id = ${userId} THEN 'owner'
-    WHEN EXISTS (${grantsFor(userId, true)}) THEN 'editor'
-    ELSE 'viewer' END`;
-  return (
-    db
-      .selectFrom('notes')
-      .select(role.as('role'))
-      // Parenthesized so filters chained on with AND apply to both halves of the OR.
-      .where(sql<boolean>`(notes.owner_id = ${userId} OR EXISTS (${grantsFor(userId, false)}))`)
-  );
+  return db
+    .selectFrom('notes')
+    .innerJoin(accessGrants(userId).as('access'), 'access.noteId', 'notes.id')
+    .select('access.role');
 }
 
 /** The caller's effective role on a note, or undefined if they can't read it. */
