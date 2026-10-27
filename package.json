@@ -23,6 +23,7 @@
   },
   "homepage": "https://github.com/JordanFriendshuh/bluestaq-notes#readme",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
     "bcryptjs": "^3.0.3",
     "express": "^5.3.0",
     "express-rate-limit": "^8.7.1",

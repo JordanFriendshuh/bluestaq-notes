@@ -192,7 +192,7 @@ The client reads the tool list, decides when to call a tool, and gets JSON back.
 
 ```
 list_teams      {}                                   -> teams the caller belongs to
-search_notes    { q?, scope?, limit? }               -> same results as GET /notes
+search_notes    { q?, scope?, limit?, offset? }      -> same results as GET /notes (limit up to 50)
 get_note        { noteId }                           -> note with its version
 create_note     { title, body?, items? }
 update_note     { noteId, version, title?, body? }
@@ -208,9 +208,17 @@ share_note      { noteId, userEmail | teamId, role }
 - **Auth:** the same `Authorization: Bearer <jwt>` as REST (`claude mcp add --transport http notes
   https://localhost:3000/mcp --header "Authorization: Bearer <jwt>"`). The MCP spec's answer for
   remote servers is OAuth 2.1; that's on the "more time" list.
-- **Stateless:** each request builds its server from the caller's token, with no MCP sessions to keep.
+- **Stateless:** each `POST /mcp` builds a server bound to the token's user, so there is no
+  `Mcp-Session-Id` to store, steal or expire apart from the token. `GET` and `DELETE /mcp` (stream
+  resumption and session end) answer 405. Responses are plain JSON, not SSE streams.
+- **Same side effects as REST:** MCP writes publish the same live events, so WebSocket viewers see an
+  AI's edit exactly like a person's, and sharing re-checks live rooms.
 - **Errors** are tool results with `isError: true` and the same `code` and `message` as REST.
-  `update_note` needs `version`, so a stale write is a `version_conflict` with the current note.
+  `update_note` and `update_item` need `version`, so a stale write is a `version_conflict` with the
+  current copy. Input that fails a tool's schema is refused by the SDK with a plain-text message.
+- **Not exposed on purpose:** deleting notes, removing shares, and team administration. Those are
+  destructive or about people, so they stay with a person using REST; deleting a checklist item is
+  the one delete, and it's marked destructive for the client.
 - Tests call each tool over HTTP and repeat the permission matrix for MCP (owner, editor, viewer,
   team member, stranger).
 

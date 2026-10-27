@@ -1,8 +1,10 @@
 import { z } from 'zod';
 
+export const granteeEmail = z.string().trim().max(254).pipe(z.email());
+
 export const putShareSchema = z
   .object({
-    userEmail: z.string().trim().max(254).pipe(z.email()).optional(),
+    userEmail: granteeEmail.optional(),
     teamId: z.uuid().optional(),
     role: z.enum(['viewer', 'editor']),
   })
